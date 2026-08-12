@@ -1,33 +1,323 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import DashboardLayout from "@/components/DashboardLayout";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  Filter,
+  Link2,
+  LockKeyhole,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  UserRound,
+  Users,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
+type LeadFormState = {
+  name: string;
+  contact: string;
+  email: string;
+  address: string;
+  type: string;
+  demoLink: string;
+};
+
+const emptyForm: LeadFormState = {
+  name: "",
+  contact: "",
+  email: "",
+  address: "",
+  type: "",
+  demoLink: "",
+};
+
+const typeSuggestions = ["SaaS", "Agency", "E-commerce", "Services", "Other"];
+
 export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+  return (
+    <DashboardLayout>
+      <LeadWorkspace />
+    </DashboardLayout>
+  );
+}
 
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+function LeadWorkspace() {
+  const { user } = useAuth();
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [claimStatus, setClaimStatus] = useState<"all" | "claimed" | "unclaimed">("all");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingLeadId, setEditingLeadId] = useState<number | null>(null);
+  const [form, setForm] = useState<LeadFormState>(emptyForm);
+  const [deleteLeadId, setDeleteLeadId] = useState<number | null>(null);
+
+  const queryInput = useMemo(
+    () => ({ search: search.trim() || undefined, type: typeFilter, claimStatus }),
+    [search, typeFilter, claimStatus],
+  );
+  const leadsQuery = trpc.leads.list.useQuery(queryInput);
+  const utils = trpc.useUtils();
+
+  const createMutation = trpc.leads.create.useMutation({
+    onSuccess: () => {
+      toast.success("Lead added to the queue");
+      setFormOpen(false);
+      setForm(emptyForm);
+      void utils.leads.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const updateMutation = trpc.leads.update.useMutation({
+    onSuccess: () => {
+      toast.success("Lead details updated");
+      setFormOpen(false);
+      setEditingLeadId(null);
+      setForm(emptyForm);
+      void utils.leads.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const claimMutation = trpc.leads.claim.useMutation({
+    onSuccess: () => {
+      toast.success("Lead claimed — it is now locked to you");
+      void utils.leads.list.invalidate();
+    },
+    onError: error => {
+      toast.error(error.message);
+      void utils.leads.list.invalidate();
+    },
+  });
+  const deleteMutation = trpc.leads.remove.useMutation({
+    onSuccess: () => {
+      toast.success("Lead removed");
+      setDeleteLeadId(null);
+      void utils.leads.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+
+  const leads = leadsQuery.data ?? [];
+  const stats = useMemo(() => {
+    const claimed = leads.filter(lead => lead.claimedByUserId !== null).length;
+    const mine = leads.filter(lead => lead.claimedByUserId === user?.id).length;
+    return { total: leads.length, claimed, unclaimed: leads.length - claimed, mine };
+  }, [leads, user?.id]);
+  const types = useMemo(() => {
+    const values = new Set(leads.map(lead => lead.type));
+    return Array.from(new Set([...typeSuggestions, ...Array.from(values)])).sort();
+  }, [leads]);
+
+  const openCreate = () => {
+    setEditingLeadId(null);
+    setForm(emptyForm);
+    setFormOpen(true);
+  };
+
+  const openEdit = (lead: (typeof leads)[number]) => {
+    setEditingLeadId(lead.id);
+    setForm({
+      name: lead.name,
+      contact: lead.contact,
+      email: lead.email,
+      address: lead.address,
+      type: lead.type,
+      demoLink: lead.demoLink,
+    });
+    setFormOpen(true);
+  };
+
+  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (editingLeadId) {
+      updateMutation.mutate({ id: editingLeadId, ...form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const deleteTarget = leads.find(lead => lead.id === deleteLeadId);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
+    <div className="min-h-screen px-4 py-6 sm:px-7 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1500px]">
+        <header className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
+              Live workspace
+            </div>
+            <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-4xl">Leads, in motion.</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">A focused queue for your team to organize prospects, share context, and move the right conversations forward.</p>
+          </div>
+          <Button onClick={openCreate} className="h-11 rounded-xl bg-slate-950 px-5 font-semibold text-white shadow-[0_8px_18px_-10px_rgba(15,23,42,0.7)] transition-all hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0">
+            <Plus className="mr-2 h-4 w-4" />
+            Add lead
+          </Button>
+        </header>
+
+        <section className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Lead summary">
+          <StatCard label="Total leads" value={stats.total} detail="in your current view" icon={<Users className="h-4 w-4" />} tone="dark" />
+          <StatCard label="Unclaimed" value={stats.unclaimed} detail="ready for an agent" icon={<CircleAlert className="h-4 w-4" />} tone="warm" />
+          <StatCard label="Claimed" value={stats.claimed} detail="locked to an owner" icon={<LockKeyhole className="h-4 w-4" />} tone="blue" />
+          <StatCard label="Claimed by you" value={stats.mine} detail="your active queue" icon={<UserRound className="h-4 w-4" />} tone="green" />
+        </section>
+
+        <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_20px_60px_-38px_rgba(15,23,42,0.42)]">
+          <CardContent className="p-0">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight text-slate-950">Lead queue</h2>
+                <p className="mt-1 text-sm text-slate-400">Search, filter, and claim work without stepping on another agent’s queue.</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+                <span className="hidden rounded-full bg-slate-100 px-3 py-1.5 sm:inline-flex">{stats.total} visible</span>
+                <Button variant="outline" size="icon" onClick={() => void leadsQuery.refetch()} className="h-9 w-9 rounded-xl border-slate-200 bg-white" aria-label="Refresh leads">
+                  <RefreshCw className={`h-4 w-4 ${leadsQuery.isFetching ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/60 p-4 sm:p-5 lg:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by lead name..." className="h-10 rounded-xl border-slate-200 bg-white pl-10 text-sm shadow-none focus-visible:ring-slate-950" aria-label="Search leads by name" />
+                {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label="Clear search"><X className="h-4 w-4" /></button>}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <label className="relative min-w-[170px]">
+                  <SlidersHorizontal className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10" aria-label="Filter by lead type">
+                    <option value="all">All types</option>
+                    {types.map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </label>
+                <label className="relative min-w-[180px]">
+                  <Filter className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <select value={claimStatus} onChange={event => setClaimStatus(event.target.value as typeof claimStatus)} className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10" aria-label="Filter by claim status">
+                    <option value="all">All claim status</option>
+                    <option value="unclaimed">Unclaimed</option>
+                    <option value="claimed">Claimed</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </label>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1100px] text-sm">
+                <thead className="bg-white">
+                  <tr className="border-b border-slate-100 text-left">
+                    <TableHeader> Name </TableHeader>
+                    <TableHeader> Contact </TableHeader>
+                    <TableHeader> Email </TableHeader>
+                    <TableHeader> Address </TableHeader>
+                    <TableHeader> Type </TableHeader>
+                    <TableHeader> Demo Link </TableHeader>
+                    <TableHeader> Claim status </TableHeader>
+                    <TableHeader><span className="sr-only">Actions</span></TableHeader>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leadsQuery.isLoading ? (
+                    <LoadingRows />
+                  ) : leadsQuery.isError ? (
+                    <tr><td colSpan={8} className="p-12 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><CircleAlert className="mb-3 h-6 w-6 text-red-500" /><p className="font-semibold text-slate-800">Couldn’t load the queue</p><p className="mt-1 text-sm text-slate-400">Refresh the page and try again.</p></div></td></tr>
+                  ) : leads.length === 0 ? (
+                    <tr><td colSpan={8} className="p-14 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Search className="h-5 w-5 text-slate-400" /></div><p className="font-semibold text-slate-800">No leads match this view</p><p className="mt-1 text-sm text-slate-400">Try adjusting your filters or add a new lead to get started.</p></div></td></tr>
+                  ) : (
+                    leads.map(lead => {
+                      const isMine = lead.claimedByUserId === user?.id;
+                      const isLocked = lead.claimedByUserId !== null;
+                      const claimedName = lead.claimedByName || lead.claimedByEmail || "Another agent";
+                      return (
+                        <tr key={lead.id} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                          <td className="px-5 py-4 align-top"><div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-600">{initials(lead.name)}</div><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{lead.name}</p><p className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">Lead #{String(lead.id).padStart(4, "0")}</p></div></div></td>
+                          <td className="px-5 py-4 align-top text-slate-600">{lead.contact}</td>
+                          <td className="max-w-[230px] truncate px-5 py-4 align-top text-slate-600" title={lead.email}>{lead.email}</td>
+                          <td className="max-w-[230px] truncate px-5 py-4 align-top text-slate-500" title={lead.address}>{lead.address}</td>
+                          <td className="px-5 py-4 align-top"><Badge variant="secondary" className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{lead.type}</Badge></td>
+                          <td className="px-5 py-4 align-top"><a href={lead.demoLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-slate-950 hover:decoration-slate-950"><Link2 className="h-3.5 w-3.5" />View demo<ArrowUpRight className="h-3 w-3" /></a></td>
+                          <td className="px-5 py-4 align-top">
+                            {isLocked ? <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${isMine ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}><LockKeyhole className="h-3.5 w-3.5" /></span><div><p className={`text-xs font-bold ${isMine ? "text-emerald-700" : "text-amber-700"}`}>{isMine ? "Claimed by you" : "Locked"}</p><p className="mt-0.5 max-w-[145px] truncate text-[11px] text-slate-400" title={claimedName}>{isMine ? "Your active lead" : claimedName}</p></div></div> : <Button onClick={() => claimMutation.mutate({ id: lead.id })} disabled={claimMutation.isPending} variant="outline" className="h-9 rounded-xl border-emerald-200 bg-emerald-50/50 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"><Check className="mr-1.5 h-3.5 w-3.5" />Claim lead</Button>}
+                          </td>
+                          <td className="px-5 py-4 align-top">{isLocked && !isMine ? <div className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-400" title={`Locked to ${claimedName}`}><LockKeyhole className="h-3.5 w-3.5" />Locked</div> : <div className="flex items-center justify-end gap-1 opacity-70 transition-opacity group-hover:opacity-100"><Button onClick={() => openEdit(lead)} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label={`Edit ${lead.name}`}><Pencil className="h-3.5 w-3.5" /></Button><Button onClick={() => setDeleteLeadId(lead.id)} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`Delete ${lead.name}`}><Trash2 className="h-3.5 w-3.5" /></Button></div>}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-4 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6"><span>Claims are identity-locked and protected for the owning agent.</span><span className="inline-flex items-center gap-1.5 font-semibold text-emerald-600"><CircleCheck className="h-3.5 w-3.5" />Team-ready</span></div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-slate-200 p-0 sm:max-w-2xl">
+          <form onSubmit={submitForm}>
+            <DialogHeader className="border-b border-slate-100 px-6 py-5 text-left"><DialogTitle className="text-xl tracking-tight text-slate-950">{editingLeadId ? "Edit lead" : "Add a new lead"}</DialogTitle><DialogDescription className="mt-1">Keep the details crisp so the next agent can take action quickly.</DialogDescription></DialogHeader>
+            <div className="grid gap-5 px-6 py-6 sm:grid-cols-2">
+              <Field label="Name" value={form.name} onChange={value => setForm({ ...form, name: value })} placeholder="Acme Corporation" required />
+              <Field label="Contact" value={form.contact} onChange={value => setForm({ ...form, contact: value })} placeholder="Jordan Lee · +1 555 0100" required />
+              <Field label="Email" type="email" value={form.email} onChange={value => setForm({ ...form, email: value })} placeholder="jordan@acme.com" required />
+              <Field label="Type" value={form.type} onChange={value => setForm({ ...form, type: value })} placeholder="SaaS" list="lead-types" required />
+              <div className="sm:col-span-2"><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor="address">Address</label><Textarea id="address" value={form.address} onChange={event => setForm({ ...form, address: event.target.value })} placeholder="Street, city, region" className="min-h-24 resize-none rounded-xl border-slate-200 bg-slate-50/50 focus-visible:ring-slate-950" required /></div>
+              <div className="sm:col-span-2"><Field label="Demo Link" type="url" value={form.demoLink} onChange={value => setForm({ ...form, demoLink: value })} placeholder="https://example.com/demo" required /><p className="mt-2 text-xs text-slate-400">Use the full URL so the team can open it in one click.</p></div>
+              <datalist id="lead-types">{typeSuggestions.map(type => <option key={type} value={type} />)}</datalist>
+            </div>
+            <DialogFooter className="border-t border-slate-100 px-6 py-4"><Button type="button" variant="outline" onClick={() => setFormOpen(false)} className="rounded-xl border-slate-200">Cancel</Button><Button type="submit" disabled={isSaving} className="rounded-xl bg-slate-950 text-white hover:bg-slate-800">{isSaving ? "Saving..." : editingLeadId ? "Save changes" : "Add lead"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteLeadId !== null} onOpenChange={open => !open && setDeleteLeadId(null)}>
+        <AlertDialogContent className="rounded-2xl border-slate-200">
+          <AlertDialogHeader><AlertDialogTitle>Delete {deleteTarget?.name ?? "this lead"}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the lead from the shared queue. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel className="rounded-xl border-slate-200">Cancel</AlertDialogCancel><AlertDialogAction onClick={() => deleteLeadId && deleteMutation.mutate({ id: deleteLeadId })} className="rounded-xl bg-red-600 text-white hover:bg-red-700">Delete lead</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+function StatCard({ label, value, detail, icon, tone }: { label: string; value: number; detail: string; icon: React.ReactNode; tone: "dark" | "warm" | "blue" | "green" }) {
+  const tones = { dark: "bg-slate-950 text-white", warm: "bg-[#fffaf2] text-slate-900 border-amber-100", blue: "bg-[#f5f8ff] text-slate-900 border-blue-100", green: "bg-[#f2fbf6] text-slate-900 border-emerald-100" };
+  const iconTones = { dark: "bg-white/10 text-slate-200", warm: "bg-amber-100 text-amber-700", blue: "bg-blue-100 text-blue-700", green: "bg-emerald-100 text-emerald-700" };
+  return <div className={`rounded-2xl border p-5 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.4)] ${tones[tone]}`}><div className="flex items-start justify-between"><p className={`text-xs font-bold uppercase tracking-[0.16em] ${tone === "dark" ? "text-slate-400" : "text-slate-400"}`}>{label}</p><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${iconTones[tone]}`}>{icon}</span></div><p className="mt-5 text-3xl font-semibold tracking-[-0.05em]">{value}</p><p className={`mt-1 text-xs ${tone === "dark" ? "text-slate-400" : "text-slate-400"}`}>{detail}</p></div>;
+}
+
+function TableHeader({ children }: { children: React.ReactNode }) {
+  return <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{children}</th>;
+}
+
+function LoadingRows() {
+  return <>{[1, 2, 3, 4].map(row => <tr key={row} className="border-b border-slate-100"><td colSpan={8} className="px-5 py-4"><div className="h-10 animate-pulse rounded-xl bg-slate-100" /></td></tr>)}</>;
+}
+
+function Field({ label, value, onChange, placeholder, type = "text", required, list }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string; required?: boolean; list?: string }) {
+  return <div><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor={`field-${label}`}>{label}</label><Input id={`field-${label}`} type={type} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} required={required} list={list} className="h-11 rounded-xl border-slate-200 bg-slate-50/50 focus-visible:ring-slate-950" /></div>;
+}
+
+function initials(name: string) {
+  return name.split(" ").filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
 }

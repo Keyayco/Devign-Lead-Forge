@@ -1,28 +1,110 @@
 import { COOKIE_NAME } from "@shared/const";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import {
+  claimLead,
+  createLead,
+  deleteLead,
+  getLeadById,
+  getLeadWithClaimer,
+  listLeads,
+  updateLead,
+} from "./db";
+
+const leadFields = {
+  name: z.string().trim().min(1, "Name is required").max(160),
+  contact: z.string().trim().min(1, "Contact is required").max(160),
+  email: z.string().trim().email("Enter a valid email").max(320),
+  address: z.string().trim().min(1, "Address is required").max(1000),
+  type: z.string().trim().min(1, "Type is required").max(96),
+  demoLink: z.string().trim().url("Enter a valid demo link").max(512),
+};
+
+const leadInput = z.object(leadFields);
+
+async function assertLeadAccess(id: number, userId: number) {
+  const existing = await getLeadById(id);
+  if (!existing) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found" });
+  }
+  if (existing.claimedByUserId && existing.claimedByUserId !== userId) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This lead is locked to the claiming agent",
+    });
+  }
+  return existing;
+}
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  leads: router({
+    list: protectedProcedure
+      .input(
+        z
+          .object({
+            search: z.string().optional(),
+            type: z.string().optional(),
+            claimStatus: z.enum(["all", "claimed", "unclaimed"]).default("all"),
+          })
+          .optional(),
+      )
+      .query(({ input }) => listLeads(input)),
+
+    create: protectedProcedure.input(leadInput).mutation(({ input }) => createLead(input)),
+
+    update: protectedProcedure
+      .input(leadInput.extend({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        await assertLeadAccess(input.id, ctx.user.id);
+        const { id, ...fields } = input;
+        return updateLead(id, fields);
+      }),
+
+    remove: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        await assertLeadAccess(input.id, ctx.user.id);
+        await deleteLead(input.id);
+        return { success: true } as const;
+      }),
+
+    claim: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        const existing = await getLeadById(input.id);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found" });
+        }
+        if (existing.claimedByUserId) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This lead has already been claimed",
+          });
+        }
+
+        const claimed = await claimLead(input.id, ctx.user.id);
+        if (!claimed) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This lead was claimed by another agent just now",
+          });
+        }
+        return getLeadWithClaimer(input.id);
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
