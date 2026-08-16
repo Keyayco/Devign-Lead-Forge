@@ -1,5 +1,14 @@
-import { and, desc, eq, isNull, isNotNull, like } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import {
+  and,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  like,
+  type SQL,
+} from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertLead,
   InsertUser,
@@ -10,22 +19,30 @@ import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+/**
+ * Lazily create one shared Postgres/Drizzle client. Supabase's pooled
+ * connection string is recommended for Vercel; prepare:false avoids prepared
+ * statement issues when traffic moves between serverless instances.
+ */
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+  if (!_db) {
+    const connectionString = ENV.databaseUrl;
+    if (!connectionString) {
+      console.warn("[Database] DATABASE_URL/SUPABASE_DATABASE_URL is not configured");
+      return null;
     }
+
+    const client = postgres(connectionString, {
+      prepare: false,
+      max: process.env.VERCEL ? 1 : 10,
+    });
+    _db = drizzle(client);
   }
   return _db;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
+  if (!user.openId) throw new Error("User openId is required for upsert");
 
   const db = await getDb();
   if (!db) {
@@ -33,60 +50,63 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     return;
   }
 
-  try {
-    const values: InsertUser = { openId: user.openId };
-    const updateSet: Record<string, unknown> = {};
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
+  const values: InsertUser = {
+    openId: user.openId,
+    name: user.name ?? null,
+    email: user.email ?? null,
+    loginMethod: user.loginMethod ?? null,
+    role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user"),
+    lastSignedIn: user.lastSignedIn ?? new Date(),
+  };
 
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (!values.lastSignedIn) values.lastSignedIn = new Date();
-    if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  await db
+    .insert(users)
+    .values(values)
+    .onConflictDoUpdate({
+      target: users.openId,
+      set: {
+        name: values.name,
+        email: values.email,
+        loginMethod: values.loginMethod,
+        role: values.role,
+        lastSignedIn: values.lastSignedIn,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
+
+export type LeadListRow = {
+  id: number;
+  name: string;
+  contact: string;
+  email: string;
+  address: string;
+  type: string;
+  demoLink: string;
+  claimedByUserId: number | null;
+  claimedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  claimedByName: string | null;
+  claimedByEmail: string | null;
+};
 
 export async function listLeads(filters?: {
   search?: string;
   type?: string;
   claimStatus?: "all" | "claimed" | "unclaimed";
-}) {
+}): Promise<LeadListRow[]> {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [];
+  const conditions: SQL[] = [];
   if (filters?.search?.trim()) {
     conditions.push(like(leads.name, `%${filters.search.trim()}%`));
   }
@@ -122,19 +142,18 @@ export async function listLeads(filters?: {
     .leftJoin(users, eq(leads.claimedByUserId, users.id))
     .orderBy(desc(leads.updatedAt));
 
-  return conditions.length > 0
-    ? query.where(and(...conditions))
-    : query;
+  const rows = conditions.length > 0 ? await query.where(and(...conditions)) : await query;
+  return rows as LeadListRow[];
 }
 
 export async function getLeadById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-export async function getLeadWithClaimer(id: number) {
+export async function getLeadWithClaimer(id: number): Promise<LeadListRow | undefined> {
   const result = await listLeads();
   return result.find(lead => lead.id === id);
 }
@@ -142,9 +161,9 @@ export async function getLeadWithClaimer(id: number) {
 export async function createLead(input: InsertLead) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const [inserted] = await db.insert(leads).values(input).$returningId();
+  const [inserted] = await db.insert(leads).values(input).returning({ id: leads.id });
   if (!inserted?.id) throw new Error("Lead was created without an id");
-  return getLeadWithClaimer(Number(inserted.id));
+  return getLeadWithClaimer(inserted.id);
 }
 
 export async function updateLead(
@@ -153,7 +172,7 @@ export async function updateLead(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  await db.update(leads).set(input).where(eq(leads.id, id));
+  await db.update(leads).set({ ...input, updatedAt: new Date() }).where(eq(leads.id, id));
   return getLeadWithClaimer(id);
 }
 
@@ -164,20 +183,18 @@ export async function deleteLead(id: number) {
 }
 
 /**
- * Claiming uses a conditional UPDATE so two simultaneous agents cannot both
- * win. Only the first update matching the unclaimed row changes it.
+ * The conditional UPDATE is the claim lock. PostgreSQL returns one row only
+ * for the winner, so simultaneous claims cannot both succeed.
  */
 export async function claimLead(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
 
-  await db
+  const [updated] = await db
     .update(leads)
-    .set({ claimedByUserId: userId, claimedAt: new Date() })
-    .where(and(eq(leads.id, id), isNull(leads.claimedByUserId)));
+    .set({ claimedByUserId: userId, claimedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(leads.id, id), isNull(leads.claimedByUserId)))
+    .returning({ claimedByUserId: leads.claimedByUserId });
 
-  // Re-read the row instead of relying on driver-specific mutation metadata.
-  // If another agent won the race, the stored owner will be different.
-  const updated = await getLeadById(id);
   return updated?.claimedByUserId === userId;
 }

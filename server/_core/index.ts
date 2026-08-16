@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { type Express } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -19,39 +19,51 @@ function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
-async function findAvailablePort(startPort: number = 3000): Promise<number> {
+async function findAvailablePort(startPort = 3000): Promise<number> {
   for (let port = startPort; port < startPort + 20; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
+    if (await isPortAvailable(port)) return port;
   }
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
-async function startServer() {
+/**
+ * Build the API application without starting a long-lived listener. This is
+ * what makes the same route surface usable by Vercel's Node function runtime.
+ */
+export async function createApp(
+  options: { serveClient?: boolean; devServer?: ReturnType<typeof createServer> } = {},
+): Promise<Express> {
   const app = express();
-  const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  const serveClient = options.serveClient ?? true;
+
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ limit: "10mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
-  // tRPC API
   app.use(
     "/api/trpc",
     createExpressMiddleware({
       router: appRouter,
       createContext,
-    })
+    }),
   );
-  // development mode uses Vite, production mode uses static files
-  if (process.env.NODE_ENV === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+
+  if (serveClient) {
+    if (process.env.NODE_ENV === "development") {
+      await setupVite(app, options.devServer ?? createServer(app));
+    } else {
+      serveStatic(app);
+    }
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
+  return app;
+}
+
+async function startServer() {
+  const server = createServer();
+  const app = await createApp({ serveClient: true, devServer: server });
+  server.on("request", app);
+  const preferredPort = parseInt(process.env.PORT || "3000", 10);
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
@@ -63,4 +75,8 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+// Vercel imports this module from api/[...path].ts; local development and
+// the managed Manus runtime still use the standalone listener.
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
+  startServer().catch(console.error);
+}

@@ -25,3 +25,10 @@
 - Once claimed, a lead is locked to the claiming agent's identity; other agents cannot claim it or modify/delete it.
 - The exact column labels requested by the user are preserved in the table UI.
 - No fake customer reviews, ratings, or testimonials are included.
+
+## Supabase & Vercel Migration (Phase 2 & 3)
+
+- [x] Adapt database schema and connection configuration for Supabase PostgreSQL (SQL migration script for users and leads).
+- [x] Provide default-deny Supabase Row Level Security (RLS), trigger configuration, and documented server-side Manus OAuth authorization for agent identity and atomic lead claiming.
+- [x] Refactor client/server data fetching (or provide client-side Supabase/Vercel serverless functions) to support standalone Vercel deployment.
+- [x] Write an extensive, step-by-step setup and migration guide covering Supabase project creation, environment variables, Vercel deployment, RLS, and OAuth setup.
