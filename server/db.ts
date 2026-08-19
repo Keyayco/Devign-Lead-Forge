@@ -9,12 +9,7 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import {
-  InsertLead,
-  InsertUser,
-  leads,
-  users,
-} from "../drizzle/schema";
+import { InsertLead, InsertUser, leads, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -28,7 +23,7 @@ export async function getDb() {
   if (!_db) {
     const connectionString = ENV.databaseUrl;
     if (!connectionString) {
-      console.warn("[Database] DATABASE_URL/SUPABASE_DATABASE_URL is not configured");
+      console.warn("[Database] SUPABASE_DATABASE_URL/DATABASE_URL is not configured");
       return null;
     }
 
@@ -42,7 +37,7 @@ export async function getDb() {
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) throw new Error("User openId is required for upsert");
+  if (!user.authUserId) throw new Error("Supabase authUserId is required for upsert");
 
   const db = await getDb();
   if (!db) {
@@ -51,11 +46,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   const values: InsertUser = {
-    openId: user.openId,
+    authUserId: user.authUserId,
     name: user.name ?? null,
     email: user.email ?? null,
-    loginMethod: user.loginMethod ?? null,
-    role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user"),
+    loginMethod: user.loginMethod ?? "password",
+    role: user.role ?? "user",
     lastSignedIn: user.lastSignedIn ?? new Date(),
   };
 
@@ -63,22 +58,21 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     .insert(users)
     .values(values)
     .onConflictDoUpdate({
-      target: users.openId,
+      target: users.authUserId,
       set: {
         name: values.name,
         email: values.email,
         loginMethod: values.loginMethod,
-        role: values.role,
         lastSignedIn: values.lastSignedIn,
         updatedAt: new Date(),
       },
     });
 }
 
-export async function getUserByOpenId(openId: string) {
+export async function getUserByAuthUserId(authUserId: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db.select().from(users).where(eq(users.authUserId, authUserId)).limit(1);
   return result[0];
 }
 

@@ -14,7 +14,7 @@ CREATE TABLE "leads" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"open_id" varchar(128) NOT NULL,
+	"auth_user_id" varchar(128) NOT NULL,
 	"name" text,
 	"email" varchar(320),
 	"login_method" varchar(64),
@@ -22,7 +22,7 @@ CREATE TABLE "users" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"last_signed_in" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "users_open_id_unique" UNIQUE("open_id")
+	CONSTRAINT "users_auth_user_id_unique" UNIQUE("auth_user_id")
 );
 --> statement-breakpoint
 ALTER TABLE "leads" ADD CONSTRAINT "leads_claimed_by_user_id_users_id_fk" FOREIGN KEY ("claimed_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;

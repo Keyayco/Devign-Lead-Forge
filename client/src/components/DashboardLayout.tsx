@@ -19,13 +19,12 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { startLogin } from "@/const";
+import { AuthPanel } from "./AuthPanel";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
-import { Button } from "./ui/button";
 
 const menuItems = [{ icon: LayoutDashboard, label: "Leads workspace", path: "/" }];
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -46,23 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) return <DashboardLayoutSkeleton />;
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#f6f7f9] flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-          <div className="mx-auto mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-sm font-bold text-white shadow-lg shadow-slate-900/15">
-            DL
-          </div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Devign Lead Forge</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Your workspace is private.</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-500">Sign in with your Manus identity to access the team lead queue.</p>
-          <Button onClick={() => startLogin()} size="lg" className="mt-8 w-full rounded-xl bg-slate-950 text-white hover:bg-slate-800">
-            Sign in to continue
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  if (!user) return <AuthPanel />;
 
   return (
     <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>

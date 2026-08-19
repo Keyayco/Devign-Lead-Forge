@@ -8,12 +8,12 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Internal agent profile keyed by the Manus OAuth openId.
- * The SQL setup guide maps this table to Supabase's authenticated team model.
+ * Internal agent profile keyed by the Supabase Auth user UUID.
+ * The numeric id remains the stable ownership reference used by lead claims.
  */
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  openId: varchar("open_id", { length: 128 }).notNull().unique(),
+  authUserId: varchar("auth_user_id", { length: 128 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("login_method", { length: 64 }),

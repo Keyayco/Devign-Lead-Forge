@@ -8,6 +8,13 @@
       "when": 1786898126360,
       "tag": "0000_living_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787172834386,
+      "tag": "0001_user_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,6 @@ import express, { type Express } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -39,7 +38,6 @@ export async function createApp(
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ limit: "10mb", extended: true }));
   registerStorageProxy(app);
-  registerOAuthRoutes(app);
   app.use(
     "/api/trpc",
     createExpressMiddleware({
@@ -76,7 +74,7 @@ async function startServer() {
 }
 
 // Vercel imports this module from api/[...path].ts; local development and
-// the managed Manus runtime still use the standalone listener.
+// the managed preview runtime still uses the standalone listener.
 if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
   startServer().catch(console.error);
 }

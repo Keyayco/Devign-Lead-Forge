@@ -1,138 +1,125 @@
-# Devign Lead Forge: Supabase and Vercel Setup Guide
+# Devign Lead Forge: Supabase Auth and Vercel Setup Guide
 
 ## Executive assessment
 
-The original project was not deployment-ready for a Supabase-plus-Vercel architecture without changes. It was a React/Vite frontend bundled with an Express server, tRPC procedures, Drizzle ORM, and a MySQL/TiDB database connection. It also used Manus OAuth as the identity provider. That combination works well as one long-lived Node application, but Vercel is optimized for static frontend assets and request-scoped Functions rather than a process that must remain listening on a port.
+The application is now designed for a **same-origin Vercel deployment**: Vercel serves the React/Vite frontend and exposes the existing Express/tRPC API as a request-scoped Node Function under `/api`. Supabase provides PostgreSQL persistence and Supabase Auth email/password identity. This is a suitable lightweight architecture for a team of approximately 5–10 agents because the browser does not need a permanently running process, while lead ownership remains enforced by the API and database.
 
-The project has now been adapted for the following target architecture:
+The previous Manus OAuth dependency has been removed from the application path. Agents create or use ordinary Supabase Auth accounts with an email address and password. Supabase maintains the browser session; the frontend attaches the current access token as an `Authorization: Bearer ...` header on each tRPC request; the Vercel API validates that token before resolving the corresponding internal user row.
 
-| Layer | Production implementation | Purpose |
+| Layer | Production implementation | Responsibility |
 |---|---|---|
-| Browser UI | React 19 + Vite static assets on Vercel | Fast browser delivery for the 5–10-person agent team |
-| API | Existing Express + tRPC procedures exported through `api/[...path].ts` | Preserves the typed CRUD and claim-locking contract |
-| Database | Supabase PostgreSQL through Drizzle and a server-only pooled connection | Durable shared lead storage |
-| Identity | Manus OAuth | Preserves secure per-agent identity and the current `openId` ownership model |
-| Authorization | tRPC authorization plus default-deny RLS | Keeps claim ownership and mutation checks server-side, while blocking accidental direct browser access |
-| Deployment | One Vercel project for the Vite frontend and `/api/*` Functions | Keeps OAuth callbacks and cookies same-origin |
+| Browser UI | React 19 + Vite static assets on Vercel | Login, sign-up, lead table, CRUD forms, filtering, and claim state |
+| Password identity | Supabase Auth email/password | Account creation, sign-in, session persistence, and sign-out |
+| API | Express + tRPC exported through `api/[...path].ts` | Typed lead operations, bearer-token verification, and authorization |
+| Database | Supabase PostgreSQL through Drizzle and a server-only pooled URI | Users, leads, timestamps, claim ownership, and atomic claim updates |
+| Direct table access | Supabase RLS with default-deny public roles | Prevents the browser from bypassing the API through PostgREST |
+| Deployment | One Vercel project for frontend and `/api/*` Functions | Same-origin API calls without a separate CORS or cookie domain |
 
-This is the recommended first deployment path. **Do not split the API onto a different hostname unless there is a concrete reason to do so.** A same-origin Vercel project avoids an additional CORS and cross-site-cookie problem and lets the existing OAuth helper continue to derive its redirect URL from `window.location.origin`.
-
-> Vercel’s Vite guidance supports static Vite deployment, but it recommends a framework-specific Functions approach for server-side behavior. This project therefore keeps the Vite static build and exposes the existing Express/tRPC surface through a Vercel Node Function. Vercel’s SPA guidance also requires a rewrite for deep links.[1]
+> **Important:** The Supabase publishable key is not a database password. It may be present in the browser bundle. The PostgreSQL connection string is a different credential and must remain server-only.
 
 ## What changed in the repository
 
-The following changes are already present in the project checkpoint:
+The authentication and deployment refactor is implemented in the following areas.
 
-| File | Change |
+| File or directory | Purpose |
 |---|---|
-| `drizzle/schema.ts` | Replaced MySQL tables with PostgreSQL `pgTable` definitions; mapped fields to Supabase-friendly snake_case columns. |
-| `server/db.ts` | Replaced `mysql2` with `postgres` plus `drizzle-orm/postgres-js`; added serverless-friendly connection options and PostgreSQL `returning()` calls. |
-| `drizzle.config.ts` | Switched the dialect to `postgresql` and directed new migrations to `supabase/migrations`. |
-| `supabase/migrations/0000_living_quasimodo.sql` | Generated the initial `users` and `leads` PostgreSQL tables and foreign key. |
-| `supabase/migrations/0001_security.sql` | Added timestamp triggers, indexes, RLS enablement, and default-deny public-table access. |
-| `server/_core/index.ts` | Exported `createApp()` so the same API can run locally or be imported by a Vercel Function without starting a listener during import. |
-| `api/[...path].ts` | Added the Vercel catch-all Function for OAuth, tRPC, and storage routes. |
-| `vercel.json` | Added Vite build settings, the `dist/public` output directory, the Node 22 Function runtime, and SPA rewrites. |
-| `package.json` | Added `postgres`, `@vercel/node`, `build:vercel`, `dev:vercel`, and `db:generate`. |
-| `todo.md` | Added and tracked the Supabase/Vercel migration work. |
-
-The project passes the TypeScript checker after this refactor. The existing functional tests should still be run before and after connecting the real database, because a local test suite does not prove that a remote Supabase connection string or OAuth allowlist is correct.
+| `client/src/lib/supabase.ts` | Creates the browser Supabase client with persistent Auth sessions. |
+| `client/src/_core/hooks/useAuth.ts` | Loads the Supabase session, signs in, signs up, signs out, and hydrates the internal agent profile through tRPC. |
+| `client/src/components/AuthPanel.tsx` | Provides self-service email/password sign-in and account creation. |
+| `client/src/main.tsx` | Adds the current Supabase access token to tRPC requests. |
+| `server/supabaseAuth.ts` | Validates a bearer token with Supabase Auth’s `getUser` endpoint. |
+| `server/_core/context.ts` | Maps the verified Supabase UUID into the internal `users` row. |
+| `server/db.ts` | Uses `users.auth_user_id` and retains the existing numeric lead ownership model. |
+| `server/_core/index.ts` | No longer registers an OAuth callback route and remains safe to import as a Vercel Function. |
+| `server/_core/oauth.ts`, `server/_core/sdk.ts`, `server/_core/cookies.ts` | Removed from the runtime path because they existed only for Manus OAuth/session cookies. |
+| `drizzle/schema.ts` | Uses `auth_user_id` for the Supabase Auth UUID. |
+| `supabase/migrations/0000_living_quasimodo.sql` | Fresh installation schema using `auth_user_id`. |
+| `supabase/migrations/0001_user_identity.sql` | Non-destructive rename for an older Supabase database that still has `open_id`. |
+| `supabase/migrations/0002_security.sql` | RLS, timestamp triggers, indexes, and one-way claim protection. |
+| `server/supabase.auth.test.ts` | Live smoke test for the configured Supabase URL and publishable key. |
 
 ## Credential model
 
-There are two very different Supabase credentials. The publishable key you supplied is a browser-facing key. It is not a database password and cannot be used by Drizzle to connect to PostgreSQL. The current application uses a server-side tRPC API, so the required production credential is the pooled Postgres URI.
+Configure these values in Vercel for **Production**, **Preview**, and **Development** as appropriate. Vercel environment changes apply to new deployments, so redeploy after changing a value.[6]
 
-| Variable | Where it is used | Exposure | Required for this architecture |
-|---|---|---|---|
-| `SUPABASE_DATABASE_URL` | `server/db.ts` through Drizzle | Server-only | **Yes** |
-| `VITE_SUPABASE_URL` | Only needed if the browser later uses `@supabase/supabase-js` | Public | No, currently optional |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Only needed for direct browser Supabase APIs or a future Supabase Auth migration | Public | No, currently optional |
-| `JWT_SECRET` | Manus session cookie signing | Server-only | **Yes** |
-| `VITE_APP_ID` | Manus OAuth login URL | Public build variable | **Yes** |
-| `VITE_OAUTH_PORTAL_URL` | Manus OAuth portal URL | Public build variable | **Yes** |
-| `OAUTH_SERVER_URL` | Manus server-side SDK | Server-only | **Yes** |
-| `OWNER_OPEN_ID` | Promotes the configured owner to admin during upsert | Server-only | Recommended |
+| Variable | Required | Where used | Exposure |
+|---|---:|---|---|
+| `VITE_SUPABASE_URL` | Yes | Browser client and server Auth verification fallback | Public |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Yes | Browser Auth client and server Auth verification fallback | Public |
+| `SUPABASE_DATABASE_URL` | Yes | Drizzle/Postgres in the Vercel API | Server-only |
+| `SUPABASE_URL` | Optional | Explicit server-side alias for the project URL | Server-only if used |
+| `SUPABASE_PUBLISHABLE_KEY` | Optional | Explicit server-side alias for the publishable key | Public credential; keep out of source |
+| `VITE_APP_TITLE` | Optional | Site title/branding | Public |
 
-For Vercel, add variables separately to **Production**, **Preview**, and **Development**. Vercel encrypts environment variables at rest, but changes apply only to new deployments, so redeploy after changing a variable.[2]
+The application no longer requires `VITE_APP_ID`, `VITE_OAUTH_PORTAL_URL`, `OAUTH_SERVER_URL`, `OWNER_OPEN_ID`, `JWT_SECRET`, or a Manus session cookie. Remove those old variables from the Vercel project once you have confirmed there are no other applications using them.
 
-Use the Supabase **Session Pooler** URI for a serverless deployment. It normally resembles the following shape, but the host, project reference, region, and password must come from your own Supabase dashboard:
+The configured Supabase project URL is:
+
+```text
+https://bctcdpkwdyxebuiurcgk.supabase.co
+```
+
+The publishable key supplied for this project is already configured through the project’s secret manager. Do not paste it into Git, database SQL, or a server log. It is not necessary to expose a service-role key for this application.
+
+For `SUPABASE_DATABASE_URL`, use Supabase’s **Session Pooler** connection string from **Project Settings → Database → Connection string**. It normally resembles the following, but the project reference, region, and password must come from your Supabase dashboard:
 
 ```text
 postgresql://postgres.<project-ref>:<database-password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require
 ```
 
-Keep that value in `SUPABASE_DATABASE_URL`. Never rename it to a `VITE_` variable and never commit it to Git. The publishable key can remain in the frontend only if you later add direct Supabase browser calls; it is not needed by the current tRPC path.
+The password in the URI must be URL-encoded if it contains characters such as `@`, `:`, `/`, `?`, or `#`. Never prefix this variable with `VITE_`.
 
-## Step 1: Create the Supabase project
+## Step 1: Configure Supabase Auth
 
-Create a new Supabase project in the organization that will own the team’s lead data. Choose a region close to the agents and keep the database password in a password manager. The database password is different from the publishable key.
+Create or open the Supabase project at the URL above. In **Authentication → Providers**, enable the **Email** provider. Supabase’s password Auth flow supports email/password account creation and password sign-in through `signUp` and `signInWithPassword`.[1] [2] [3]
 
-Open **Project Settings → Database → Connection string** and select the **Session Pooler** URI. Replace the password placeholder with the database password and retain `sslmode=require`. Add the completed URI to Vercel as `SUPABASE_DATABASE_URL`, and keep a local copy only in `.env.local`, which must remain untracked.
+Choose the email-confirmation policy deliberately. For a real internal team, keeping **Confirm email** enabled is the safer default because an agent must prove control of the address before the account becomes usable. If you disable confirmation for a tightly controlled environment, the app can sign the agent in immediately after account creation; this is convenient but provides weaker account-verification guarantees.
 
-The repository deliberately does not auto-apply this migration to the existing Manus-managed database. That is intentional: the previous database was MySQL/TiDB, while the new migration is PostgreSQL syntax and should be applied only to the new Supabase project.
+In **Authentication → URL Configuration**, set:
 
-## Step 2: Apply the database migrations
+| Setting | Value |
+|---|---|
+| Site URL | `https://YOUR_PRODUCTION_DOMAIN` |
+| Local development URL | `http://localhost:3000` |
+| Preview URL | Add only the exact preview URLs you intend to use, if needed |
 
-The migration files must run in this order:
+The current sign-up flow sends the agent back to the origin that started sign-up. Use HTTPS for production. Password recovery is not yet exposed as a UI action in the project; if the team needs self-service recovery, add a `resetPasswordForEmail` screen and a password-update screen as a follow-up feature.
+
+## Step 2: Apply the Supabase database migrations
+
+Run the SQL files in this order in the **Supabase SQL Editor**, or apply them through the Supabase CLI after linking the project:
 
 ```text
 supabase/migrations/0000_living_quasimodo.sql
-supabase/migrations/0001_security.sql
+supabase/migrations/0001_user_identity.sql
+supabase/migrations/0002_security.sql
 ```
 
-The easiest first setup is the Supabase SQL Editor. Open the first file, run it, then open the second file and run it. Confirm that the Tables view contains `public.users` and `public.leads`, and confirm that `leads.claimed_by_user_id` references `users.id`.
+For a new Supabase project, run all three files. For an existing Supabase database created from the earlier version of this repository, run `0001_user_identity.sql` only if `public.users` still contains `open_id`, then run `0002_security.sql`. Do not run these PostgreSQL files against the managed TiDB/MySQL database attached to a Manus preview; that database uses a different SQL dialect. The repository’s built-in database is not the production target for this deployment.
 
-The migration creates the following application columns:
+The schema contains the following application fields:
 
-| Application field | Supabase column | Notes |
+| Application field | Supabase column | Meaning |
 |---|---|---|
 | `name` | `name` | Required lead name |
-| `contact` | `contact` | Required contact name or phone context |
-| `email` | `email` | Required email address |
+| `contact` | `contact` | Required contact context |
+| `email` | `email` | Required lead email |
 | `address` | `address` | Required free-form address |
 | `type` | `type` | Required lead type |
 | `demoLink` | `demo_link` | Required URL |
-| `claimedByUserId` | `claimed_by_user_id` | Nullable foreign key to `users.id` |
-| `claimedAt` | `claimed_at` | Set when the atomic claim succeeds |
-| `createdAt` | `created_at` | UTC timestamp |
-| `updatedAt` | `updated_at` | Maintained by a database trigger |
+| `claimedByUserId` | `claimed_by_user_id` | Internal numeric owner reference |
+| `claimedAt` | `claimed_at` | UTC timestamp for the winning claim |
+| `createdAt` | `created_at` | Creation timestamp |
+| `updatedAt` | `updated_at` | Maintained by the database trigger |
+| Supabase UUID | `users.auth_user_id` | Stable mapping to `auth.users.id` |
 
-The first migration creates the tables and foreign key. The second migration creates the `updated_at` triggers, adds indexes for claim/type/recency queries, enables RLS, and revokes direct table privileges from the `anon` and `authenticated` roles.
+The security migration enables RLS on `public.users` and `public.leads`, revokes table privileges from `anon` and `authenticated`, and intentionally creates no direct table policies. This is a **default-deny** design: the browser may use Supabase Auth, but it must use the Vercel API to read or mutate lead data. Supabase recommends enabling RLS for exposed tables, and an RLS-enabled table cannot be read through a publishable-key request until an applicable policy exists.[4]
 
-Supabase recommends enabling RLS for every table in an exposed schema. It also notes that once RLS is enabled, a publishable-key request cannot access rows until policies are created.[3] This project intentionally creates **no** `anon` or `authenticated` policies because the browser is not using Supabase Auth; it is using Manus OAuth. The Vercel API uses its server-only database connection and enforces the Manus identity in the tRPC procedures.
+The claim trigger rejects any update that changes an already-populated `claimed_by_user_id`. The API’s conditional PostgreSQL update performs the only supported transition, from `NULL` to the winning internal user id. This gives the system two layers of claim protection: the API authorization rule and the database’s one-way ownership guard.
 
-This is defense in depth, not a substitute for the API authorization layer. A Supabase database connection made as a privileged database role can bypass RLS, so the application must continue to enforce the rules in `server/routers.ts`: authenticated agents may list and create leads, only owners may update or delete claimed leads, and a lead can be claimed only when `claimed_by_user_id` is still null.
+## Step 3: Configure Vercel
 
-## Step 3: Configure Manus OAuth for the Vercel domain
-
-The current login implementation is intentionally preserved. It creates a one-time nonce, stores it in a secure host-only cookie, passes the nonce in the OAuth state, and verifies both values before exchanging the authorization code. The callback route is now available at `/api/oauth/callback` on the Vercel project.
-
-In the Manus OAuth application configuration, register these redirect URLs:
-
-```text
-https://YOUR_PRODUCTION_DOMAIN/api/oauth/callback
-http://localhost:3000/api/oauth/callback
-```
-
-Replace `YOUR_PRODUCTION_DOMAIN` with the final Vercel domain or custom domain. If the provider requires exact allowlisting for preview deployments, add the specific preview URL you intend to test. For the team’s normal workflow, a stable production domain is preferable.
-
-The frontend already builds its redirect URL with `window.location.origin`, so no Vercel hostname is hardcoded into the client. This matters because the OAuth redirect must match the domain the agent actually opened. The Manus OAuth guidance also requires a nonce bound to the browser cookie to prevent login CSRF and session fixation; preserve that flow and do not replace it with a callback that trusts a user-controlled redirect URL.[4]
-
-Set the following Vercel variables:
-
-```text
-VITE_APP_ID=<your Manus application id>
-VITE_OAUTH_PORTAL_URL=<your Manus OAuth portal URL>
-OAUTH_SERVER_URL=https://api.manus.im
-JWT_SECRET=<long random server secret>
-OWNER_OPEN_ID=<the owner’s Manus openId, if using admin promotion>
-```
-
-Vercel and the production custom domain provide HTTPS, which is required by the secure OAuth cookie. The browser must permit cookies; Safari Private Browsing, strict anti-tracking modes, and “block all cookies” settings can prevent the login flow from completing.
-
-## Step 4: Create the Vercel project
-
-Connect the GitHub repository `Keyayco/Devign-Lead-Forge` to Vercel. Use the repository root as the project root. The checked-in `vercel.json` already specifies the important settings, but verify them in the project dashboard:
+Connect the GitHub repository `Keyayco/Devign-Lead-Forge` to Vercel and use the repository root as the project root. The checked-in configuration already describes a Vite build, the static output directory, a Node 22 API Function, and SPA rewrites.
 
 | Vercel setting | Value |
 |---|---|
@@ -141,45 +128,66 @@ Connect the GitHub repository `Keyayco/Devign-Lead-Forge` to Vercel. Use the rep
 | Install command | `pnpm install` |
 | Build command | `pnpm build:vercel` |
 | Output directory | `dist/public` |
-| Node runtime for API | `nodejs22.x` |
-| Production branch | Your selected stable branch, normally `main` |
+| API runtime | Node.js 22 |
+| Production branch | Your stable branch, normally `main` |
 
-The build command generates only the static Vite assets. Vercel discovers `api/[...path].ts` as a Node Function and routes `/api/oauth/callback`, `/api/trpc/*`, and the storage proxy through the Express application. The SPA rewrite sends browser deep links to `index.html` while API Functions remain available under `/api`.[1]
+Add the environment variables before the first deployment:
 
-Add the environment variables before the first production deployment. Use Vercel’s environment selector so the database and OAuth variables exist in every environment where you expect the app to work. After saving variables, create a new deployment; Vercel does not retroactively inject changed variables into an old deployment.[2]
+```text
+VITE_SUPABASE_URL=https://bctcdpkwdyxebuiurcgk.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<your configured publishable key>
+SUPABASE_DATABASE_URL=<your Supabase Session Pooler URI>
+```
 
-The Supabase Vercel Marketplace integration is optional. It can synchronize variables and centralize billing, but the current Supabase documentation describes the integration as Public Alpha and lists limitations, including custom-domain restrictions for Marketplace-created resources.[5] For this internal tool, creating the Supabase project directly and adding only the required pooled URI to Vercel is the more predictable path.
+The Vite build produces static frontend assets. Vercel discovers `api/[...path].ts` as a Node Function, and the SPA rewrite sends browser routes to `index.html` while leaving `/api/*` available to the Function.[5] [6]
 
-## Step 5: Local development against Supabase
+Keep the frontend and API in the same Vercel project and domain. That avoids CORS configuration and avoids having to send bearer tokens between unrelated origins. If you intentionally split them, add an explicit trusted-origin CORS policy and never use wildcard origins for authenticated requests.
 
-Install the Vercel CLI if it is not already installed, authenticate, and link the local checkout to the Vercel project:
+## Step 4: Run locally
+
+Install dependencies and link the repository to the Vercel project:
 
 ```bash
+pnpm install
 pnpm add -g vercel
 vercel login
 vercel link
 vercel env pull .env.local
 ```
 
-Confirm that `.env.local` is ignored by Git. If you prefer to create it manually, use the variable names in the environment table above. Do not paste the database URI into source files or into browser-visible variables.
+Ensure `.env.local` is ignored by Git. For local API/database testing, `.env.local` must contain a valid `SUPABASE_DATABASE_URL`; otherwise the API will correctly report that the production database is not configured rather than accidentally connecting to the managed TiDB database.
 
-Run the normal Manus development server when you want the managed preview experience:
+Run the application with:
 
 ```bash
 pnpm dev
 ```
 
-Run the Vercel-shaped local environment when you want to verify the catch-all Function and rewrites:
+To exercise the Vercel-shaped Function locally, use:
 
 ```bash
 pnpm dev:vercel
 ```
 
-The Vercel-shaped test is especially useful for verifying that the API is imported without starting a second listener. Use the same-origin URL printed by Vercel Dev and complete a real Manus OAuth login. If the API is reached through a separate origin, you must add CORS and cross-site cookie configuration; that configuration is intentionally not part of the recommended same-origin setup.
+The local sign-up flow is:
 
-## Step 6: Validate the production deployment
+1. Open the local URL and choose **Need an account? Create one**.
+2. Enter a name, email, and password of at least six characters.
+3. If email confirmation is enabled, open the confirmation email and return to the site.
+4. Sign in with the same email and password.
+5. The first authenticated tRPC request creates or updates the internal `users` row using the Supabase Auth UUID.
 
-Run the static and server checks locally before pushing:
+## Step 5: Understand the request and authorization flow
+
+The browser Supabase client stores and refreshes the Auth session. The tRPC client calls `supabase.auth.getSession()` before a request and adds the access token as a bearer header. The API calls Supabase Auth’s `getUser(accessToken)` endpoint to validate the token, then upserts `users.auth_user_id` and resolves the numeric internal user id. Supabase documents access tokens as JWTs used to identify users and support authorization decisions.[7]
+
+The lead procedures do not trust an id supplied by the browser. `ctx.user.id` comes from the verified token-to-user mapping. A lead is claimable only when `claimed_by_user_id` is still null. An update or delete on a claimed lead is allowed only to the claiming internal user. This preserves the existing claim-lock behavior while changing only the identity provider.
+
+The publishable key is not a substitute for API authorization. It allows the browser to talk to Supabase Auth, but the table privileges and RLS setup prevent the browser from reading `public.leads` directly. The database URL is never sent to the browser.
+
+## Step 6: Verify the deployment
+
+Run the repository checks before pushing:
 
 ```bash
 pnpm check
@@ -187,69 +195,57 @@ pnpm test
 pnpm build:vercel
 ```
 
-Then validate the deployment in this order:
+The Supabase Auth smoke test calls `/auth/v1/settings` with the configured project URL and publishable key. It verifies that the supplied public credential is accepted without attempting to create a user or modify data.
+
+After deployment, verify the following sequence:
 
 | Check | Expected result |
 |---|---|
-| Open the Vercel URL | The Leads workspace shell renders. |
-| Click the login action | Manus OAuth opens and returns to `/`. |
-| Refresh after login | The agent identity remains available through the session cookie. |
-| Add a lead | The record appears in the queue and persists after refresh. |
-| Search by name | The visible queue narrows to matching leads. |
-| Filter by type/status | The query returns only the selected subset. |
-| Claim an unclaimed lead | The row shows the claiming agent and becomes locked. |
-| Attempt a second claim concurrently | Only one agent succeeds; the other receives a conflict. |
-| Edit/delete as the claimant | The action succeeds. |
-| Edit/delete as another agent | The server rejects the action and the UI hides locked-row actions. |
-| Open a deep browser path, if one is added later | Vercel serves the SPA entrypoint instead of a 404. |
+| Open the Vercel URL | The password access panel renders. |
+| Create a new account | Supabase returns either an active session or a confirmation message. |
+| Confirm email, if enabled | The agent can sign in successfully. |
+| Refresh the browser | The Supabase session persists and the internal agent identity reloads. |
+| Add a lead | The record persists in Supabase PostgreSQL. |
+| Search and filter | Name, type, and claim-status filters work. |
+| Claim an unclaimed lead | The winning agent is shown and the row is locked. |
+| Attempt a second claim | The API returns a conflict and ownership is unchanged. |
+| Edit/delete as claimant | The operation succeeds. |
+| Edit/delete as another agent | The API rejects the operation and the UI hides locked-row actions. |
+| Query Supabase REST directly with the publishable key | Direct table access is denied by the default-deny security setup. |
 
-Use Supabase’s Logs and Vercel’s Function logs together if a request fails. A database authentication error usually indicates the wrong URI or an unencoded password. An OAuth callback error usually indicates an allowlist mismatch, a cookie-blocking browser mode, or a missing `JWT_SECRET`/Manus OAuth variable.
+Use Vercel Function logs and Supabase Auth/Postgres logs together when debugging. A `401` on `/api/trpc` usually means the browser has no active session or the bearer token was not attached. A database connection failure usually means `SUPABASE_DATABASE_URL` is missing, uses the wrong pooler host, contains an unencoded password, or is not available in the selected Vercel environment.
 
-## Data migration from the previous database
+## Data migration considerations
 
-If the current Manus-managed database contains real lead data, do not point the new application at it after changing the schema. Export the old data first, transform the column names, and import it into Supabase. The old names were camelCase/MySQL-oriented; the new Supabase schema uses snake_case:
+If you have real leads in the earlier application, export and transform them before importing into Supabase. The prior internal user key was a Manus OAuth identifier; it cannot be assumed to match a Supabase Auth UUID. Agents should create Supabase Auth accounts first. Then map imported ownership only when you can reliably associate an old owner with the new `users.id`; otherwise import those leads as unclaimed and let the correct agent claim them through the application.
 
-```text
-openId              -> open_id
-loginMethod         -> login_method
-claimedByUserId     -> claimed_by_user_id
-claimedAt           -> claimed_at
-demoLink            -> demo_link
-createdAt           -> created_at
-updatedAt           -> updated_at
-lastSignedIn        -> last_signed_in
-```
+Do not migrate Manus session cookies or access tokens. They are not part of the new authentication model. Do not import passwords from another system. Agents should create new Supabase Auth passwords, and the Supabase Auth service should remain the only password verifier.[1]
 
-Do not migrate session cookies or access tokens. Agents should sign in again through Manus OAuth, which will upsert their `users` row. Preserve a lead’s `claimed_by_user_id` only if the corresponding `users.open_id` has been mapped into the new Supabase `users.id` value; otherwise import the lead as unclaimed and have the appropriate agent reclaim it through the application.
+## Operational security checklist
 
-If you preserve numeric lead IDs during an import, reset the PostgreSQL sequence after loading the rows so future inserts do not collide. If the previous database is empty or only contains test records, start with a clean Supabase project and do not seed fake customer data.
+Keep the database connection string server-only, rotate it through Vercel and Supabase when needed, and redeploy after rotation. Keep the publishable key in public variables only; never replace it with a service-role key in the browser. Keep RLS enabled even though the application uses a server API, because RLS is a valuable defense against accidental direct table exposure.[4]
 
-## Security and operating recommendations
+Use the Supabase Auth dashboard to disable accounts or enforce stronger password policies as the team grows. The current interface does not include password reset or account deletion screens. Those should be added before treating the tool as a full employee-lifecycle system. For a small internal team, the immediate operational process can be: create the account, verify the email if required, and disable departed agents in Supabase Auth.
 
-The most important security boundary is the Vercel API. The browser never receives `SUPABASE_DATABASE_URL`, and the Supabase publishable key is not used by the current CRUD path. The API verifies the Manus session and uses the authenticated user’s numeric `users.id` for ownership decisions.
+## Troubleshooting
 
-The claim operation remains an atomic conditional PostgreSQL update. It succeeds only when the target row is still unclaimed. A second agent cannot overwrite the first agent because the `WHERE claimed_by_user_id IS NULL` condition no longer matches after the first update commits.
-
-For the 5–10-agent use case, the Supabase pooled connection and the Vercel Function model are sufficient. Avoid long-running workers, in-memory lead state, and per-request migrations. Run migrations as a deliberate release step in Supabase SQL Editor or from an operator machine with the server-only database URI; do not make the Vercel build run destructive database changes.
-
-Rotate the JWT secret and database password through Vercel/Supabase when needed, redeploy after variable changes, and review Supabase database logs periodically. If you later decide that Supabase Auth should replace Manus OAuth, treat that as a separate authentication migration: the database policies can then use `auth.uid()`, but the current Manus `openId` mapping, session callback, and test assumptions would need a dedicated redesign.
-
-## Troubleshooting matrix
-
-| Symptom | Likely cause | Corrective action |
+| Symptom | Likely cause | Resolution |
 |---|---|---|
-| `DATABASE_URL` or connection errors | `SUPABASE_DATABASE_URL` is missing, malformed, or uses the direct host in a serverless-heavy setup | Use the Supabase Session Pooler URI with `sslmode=require`, add it server-side in all required Vercel environments, then redeploy. |
-| Login returns `invalid oauth state` | The nonce cookie was blocked, the callback domain is not allowlisted, or the login was started on a different origin | Use HTTPS, allowlist the exact callback URL, and retry in a cookie-permitting browser. |
-| Login returns to the wrong host | Frontend and API were split across origins without adapting the callback redirect | Use the single Vercel project architecture, or explicitly implement a trusted API/frontend origin contract. |
-| Browser can see the shell but lead requests fail | The Function environment is missing `JWT_SECRET`, `OAUTH_SERVER_URL`, or the database URI | Check Vercel Function logs and verify the variables in the deployment environment. |
-| Direct Supabase REST requests return no rows | RLS is enabled and no public policies exist by design | Use the Vercel tRPC API, or deliberately migrate to Supabase Auth and write `auth.uid()` policies. |
-| Vercel deep link returns 404 | The SPA rewrite was removed or overridden | Restore the `vercel.json` rewrite and redeploy. |
-| A second agent can claim a lead | The API was bypassed or the database schema was not applied | Confirm the application uses the conditional `claimLead` mutation and that the Supabase foreign key/table migration ran successfully. |
+| “Supabase Auth is not configured” | Missing public URL or key | Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` to the active Vercel environment and redeploy. |
+| Account creation returns a confirmation notice but sign-in fails | Email confirmation is enabled | Confirm the address, then sign in again. Check Auth email logs if the message does not arrive. |
+| Lead list is empty after successful login | Missing `SUPABASE_DATABASE_URL` or migrations not applied | Add the Session Pooler URI, apply all migrations, and inspect Function logs. |
+| `/api/trpc` returns `UNAUTHORIZED` | No session bearer token or expired session | Sign in again and confirm the browser request contains `Authorization: Bearer ...`. |
+| Direct REST table requests return `401`/`403` | Expected default-deny RLS | Use the Vercel API for lead data; do not grant broad public table policies. |
+| Claim appears to succeed twice | Incorrect schema or old API deployment | Confirm `0002_security.sql` and the conditional claim update are deployed, then redeploy Vercel. |
+| Vercel page loads but a browser route returns 404 | SPA rewrite missing | Keep the checked-in `vercel.json` rewrites and redeploy. |
+| Local preview still tries to use the managed database | Old environment fallback | Set `SUPABASE_DATABASE_URL` explicitly; the current runtime no longer falls back to `DATABASE_URL`. |
 
 ## References
 
-[1]: https://vercel.com/docs/frameworks/frontend/vite "Vite on Vercel"
-[2]: https://vercel.com/docs/environment-variables "Vercel Environment Variables"
-[3]: https://supabase.com/docs/guides/database/postgres/row-level-security "Supabase Row Level Security"
-[4]: https://github.com/Keyayco/Devign-Lead-Forge/blob/main/client/src/const.ts "Devign Lead Forge OAuth login helper"
-[5]: https://supabase.com/docs/guides/integrations/vercel-marketplace "Supabase Vercel Marketplace"
+[1]: https://supabase.com/docs/guides/auth/passwords "Supabase Password-based Auth"
+[2]: https://supabase.com/docs/reference/javascript/auth-signup "Supabase JavaScript signUp reference"
+[3]: https://supabase.com/docs/reference/javascript/auth-signinwithpassword "Supabase JavaScript signInWithPassword reference"
+[4]: https://supabase.com/docs/guides/database/postgres/row-level-security "Supabase Row Level Security"
+[5]: https://vercel.com/docs/frameworks/frontend/vite "Vercel Vite deployment documentation"
+[6]: https://vercel.com/docs/rewrites "Vercel rewrites documentation"
+[7]: https://supabase.com/docs/guides/auth/jwts "Supabase JWT documentation"

@@ -34,10 +34,10 @@ const baseLead = {
 function createContext(userId = 1): TrpcContext {
   const user: AuthenticatedUser = {
     id: userId,
-    openId: `agent-${userId}`,
+    authUserId: `supabase-agent-${userId}`,
     email: `agent${userId}@example.com`,
     name: `Agent ${userId}`,
-    loginMethod: "manus",
+    loginMethod: "password",
     role: "user",
     createdAt: new Date(),
     updatedAt: new Date(),
