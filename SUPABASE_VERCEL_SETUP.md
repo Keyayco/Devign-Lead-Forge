@@ -139,7 +139,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<your configured publishable key>
 SUPABASE_DATABASE_URL=<your Supabase Session Pooler URI>
 ```
 
-The Vite build produces static frontend assets. Vercel discovers `api/[...path].ts` as a Node Function, and the SPA rewrite sends browser routes to `index.html` while leaving `/api/*` available to the Function.[5] [6]
+The Vite build produces static frontend assets. Vercel discovers `api/[...path].ts` as a Node Function. The checked-in SPA rewrite uses a negative lookahead to send browser routes to `index.html` while explicitly excluding `/api` and `/api/*`, so the Supabase-authenticated tRPC Function remains reachable.[5] [6]
 
 Keep the frontend and API in the same Vercel project and domain. That avoids CORS configuration and avoids having to send bearer tokens between unrelated origins. If you intentionally split them, add an explicit trusted-origin CORS policy and never use wildcard origins for authenticated requests.
 
