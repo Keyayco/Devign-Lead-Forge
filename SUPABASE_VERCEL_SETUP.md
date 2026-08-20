@@ -128,7 +128,7 @@ Connect the GitHub repository `Keyayco/Devign-Lead-Forge` to Vercel and use the 
 | Install command | `pnpm install` |
 | Build command | `pnpm build:vercel` |
 | Output directory | `dist/public` |
-| API runtime | Node.js 22 |
+| API runtime | Vercel Node.js runtime (automatic) |
 | Production branch | Your stable branch, normally `main` |
 
 Add the environment variables before the first deployment:
