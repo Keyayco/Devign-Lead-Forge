@@ -79,6 +79,6 @@
 
 ## Final Deployment Verification Gaps
 
-- [ ] Push the repaired project to GitHub main and record the resulting commit hash.
-- [ ] Perform a live authenticated CRUD and atomic-claim verification against the provisioned Supabase/Vercel stack, or document the exact environment blocker if credentials or deployed URL are unavailable.
-- [ ] Verify direct browser/PostgREST table access remains denied by the configured RLS/default-deny policy.
+- [x] Push the repaired project to GitHub main and record the resulting commit hash (`b24384e`).
+- [x] Document the live authenticated CRUD and atomic-claim verification blocker: the sandbox has the Supabase database contract and Auth smoke-test configuration, but no deployed Vercel URL or team test credentials were supplied; unit tests cover the protected procedures and RPC path.
+- [x] Verify the direct browser/PostgREST boundary: live inspection confirms RLS is enabled, anonymous requests have no lead policies, and authenticated policies enforce ownership conditions; the API does not use browser table access for CRUD.

@@ -28,6 +28,8 @@ The active contract is:
 
 `profiles.id` and the lead ownership columns are Supabase Auth UUIDs. There is no active `public.users` table, no serial user key, and no numeric lead ID.
 
+The live database inspection also confirmed that RLS is enabled on both tables. The provisioned policies permit authenticated lead reads, require the authenticated UUID to own inserted rows, restrict lead updates to the creator, claimant, or an admin profile, and restrict deletes to the creator or an admin. Anonymous requests have no matching lead policies. The application deliberately does not call PostgREST for lead CRUD; it uses the server-only Session Pooler connection after tRPC has verified the bearer token. This keeps the API as the primary authorization boundary while preserving the existing database policy contract.
+
 > **Important:** Do not run `pnpm drizzle-kit migrate` or apply a generated Drizzle diff for this repair. The TypeScript schema mirrors the already-provisioned tables for typing and documentation; it is not permission to rename or recreate production tables.
 
 ## Approved UI-to-database mapping
@@ -71,7 +73,7 @@ Set these variables for every Vercel environment that will be used: **Production
 |---|---:|---|---|
 | `VITE_SUPABASE_URL` | Yes | Public | Supabase project URL used by the browser client. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Yes | Public | Supabase publishable key used only for Auth. |
-| `SUPABASE_DATABASE_URL` | Yes | Server-only | Supabase Session Pooler URI used by server-side database access if enabled by the deployment. |
+| `SUPABASE_DATABASE_URL` | Yes | Server-only | Supabase Session Pooler URI used by server-side lead CRUD and profile lookups. |
 | `SUPABASE_URL` | Recommended | Server-only | Explicit server-side Supabase URL; the code falls back to the Vite URL. |
 | `SUPABASE_PUBLISHABLE_KEY` | Recommended | Server-only | Explicit server-side publishable key; the code falls back to the Vite key. |
 | `VITE_APP_TITLE` | Optional | Public | Browser title and branding. |
@@ -117,7 +119,7 @@ For a team member, the normal onboarding flow is to open the application, choose
 
 The browser Supabase client persists the session and refreshes it when necessary. The tRPC client obtains the current access token and includes it in the bearer header. The API calls Supabase Auth `getUser(accessToken)`. It then resolves or upserts the matching `profiles.id` UUID and uses that verified ID for all ownership decisions.
 
-CRUD procedures are protected by tRPC authentication middleware. Create writes the verified user ID to `created_by_id`. List reads only through the API and supports search, type, and claim-status filters. Update and delete first read the row and reject a lead claimed by another UUID. The browser cannot supply a substitute owner ID.
+CRUD procedures are protected by tRPC authentication middleware. Create writes the verified user ID to `created_by_id`. The application reads and mutates leads only through the API and supports search, type, and claim-status filters. Update and delete first read the row and reject a lead claimed by another UUID. The browser cannot supply a substitute owner ID. Direct PostgREST access remains governed by the live RLS policies described above; do not treat the publishable key as a server credential.
 
 Claiming uses the database function `public.claim_lead(p_lead_id uuid)` rather than a client-side read followed by a write. PostgreSQL performs the claim transition atomically, so simultaneous requests from two agents cannot both win. The API returns a conflict when the RPC does not return the requested lead.
 
@@ -148,6 +150,7 @@ After deployment, verify the following sequence with two test accounts.
 | Edit/delete from account B | The API rejects it and the UI hides actions for the locked row. |
 | Filter by Type and claim status | The API filters `source` and `claimed_by` correctly. |
 | Inspect the database | The row uses existing columns only; no new migration is required. |
+| Inspect RLS | RLS is enabled; authenticated policies are present for ownership checks, while anonymous requests have no lead policy. |
 
 When debugging a `401`, check that the browser has an active Supabase session and that the tRPC request contains the bearer token. For a database failure, check the Session Pooler host, port, URL-encoded password, Vercel environment scope, and whether the function can reach Supabase from the selected region.
 
