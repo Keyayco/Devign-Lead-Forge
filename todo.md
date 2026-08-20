@@ -79,6 +79,6 @@
 
 ## Final Deployment Verification Gaps
 
-- [x] Push the repaired project to GitHub main and record the resulting commit hash (`b24384e`).
+- [x] Push the repaired project to GitHub main and record the resulting commit hash (`8270f78c1739908cca67058acc49958d73b95592`).
 - [x] Document the live authenticated CRUD and atomic-claim verification blocker: the sandbox has the Supabase database contract and Auth smoke-test configuration, but no deployed Vercel URL or team test credentials were supplied; unit tests cover the protected procedures and RPC path.
 - [x] Verify the direct browser/PostgREST boundary: live inspection confirms RLS is enabled, anonymous requests have no lead policies, and authenticated policies enforce ownership conditions; the API does not use browser table access for CRUD.
