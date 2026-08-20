@@ -5,9 +5,14 @@ import { createContext } from "./_core/context";
 import * as auth from "./supabaseAuth";
 import * as db from "./db";
 
-vi.mock("./supabaseAuth", () => ({
-  getSupabaseUserFromRequest: vi.fn(),
-}));
+vi.mock("./supabaseAuth", async importOriginal => {
+  const actual = await importOriginal<typeof import("./supabaseAuth")>();
+  return {
+    ...actual,
+    getBearerToken: vi.fn(() => "test-access-token"),
+    getSupabaseUserFromRequest: vi.fn(),
+  };
+});
 
 vi.mock("./db", async importOriginal => {
   const actual = await importOriginal<typeof import("./db")>();
@@ -20,6 +25,7 @@ vi.mock("./db", async importOriginal => {
 
 const emptyContext = (): TrpcContext => ({
   user: null,
+  accessToken: null,
   req: { headers: {} } as TrpcContext["req"],
   res: {} as TrpcContext["res"],
 });
@@ -33,24 +39,21 @@ describe("Supabase Auth authorization boundary", () => {
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
-  it("maps a verified Supabase UUID into the internal agent profile", async () => {
+  it("maps a verified Supabase UUID into the internal profile user", async () => {
     vi.mocked(auth.getSupabaseUserFromRequest).mockResolvedValue({
-      id: "supabase-uuid-123",
+      id: "00000000-0000-0000-0000-000000000123",
       email: "agent@example.com",
       user_metadata: { full_name: "Agent Example" },
     } as never);
-    const internalUser = {
-      id: 12,
-      authUserId: "supabase-uuid-123",
-      name: "Agent Example",
+    const profile = {
+      id: "00000000-0000-0000-0000-000000000123",
+      full_name: "Agent Example",
       email: "agent@example.com",
-      loginMethod: "password",
       role: "user",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      lastSignedIn: new Date(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
-    vi.mocked(db.getUserByAuthUserId).mockResolvedValue(internalUser);
+    vi.mocked(db.getUserByAuthUserId).mockResolvedValue(profile);
 
     const context = await createContext({
       req: { headers: { authorization: "Bearer test-access-token" } } as never,
@@ -58,14 +61,18 @@ describe("Supabase Auth authorization boundary", () => {
       info: {} as never,
     });
 
-    expect(db.upsertUser).toHaveBeenCalledWith({
-      authUserId: "supabase-uuid-123",
+    expect(db.getUserByAuthUserId).toHaveBeenCalledWith(
+      "00000000-0000-0000-0000-000000000123",
+    );
+    expect(db.upsertUser).not.toHaveBeenCalled();
+    expect(context.accessToken).toBe("test-access-token");
+    expect(context.user).toMatchObject({
+      id: "00000000-0000-0000-0000-000000000123",
+      authUserId: "00000000-0000-0000-0000-000000000123",
       name: "Agent Example",
       email: "agent@example.com",
+      role: "user",
       loginMethod: "password",
-      lastSignedIn: expect.any(Date),
     });
-    expect(db.getUserByAuthUserId).toHaveBeenCalledWith("supabase-uuid-123");
-    expect(context.user).toEqual(internalUser);
   });
 });

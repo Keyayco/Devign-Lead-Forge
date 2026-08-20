@@ -1,35 +1,46 @@
-import { createClient, type User as SupabaseUser } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient, type User as SupabaseUser } from "@supabase/supabase-js";
 import type { Request } from "express";
 import { ENV } from "./_core/env";
 
-let _client: ReturnType<typeof createClient> | null = null;
-
-function getSupabaseAuthClient() {
-  if (!_client) {
-    if (!ENV.supabaseUrl || !ENV.supabasePublishableKey) {
-      throw new Error("Supabase Auth is not configured");
-    }
-
-    _client = createClient(ENV.supabaseUrl, ENV.supabasePublishableKey, {
-      auth: {
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-        persistSession: false,
-      },
-    });
+function requireSupabaseConfig() {
+  if (!ENV.supabaseUrl || !ENV.supabasePublishableKey) {
+    throw new Error("Supabase Auth is not configured");
   }
-  return _client;
+  return {
+    url: ENV.supabaseUrl,
+    key: ENV.supabasePublishableKey,
+  };
+}
+
+export function createSupabaseRequestClient(accessToken: string): SupabaseClient {
+  const { url, key } = requireSupabaseConfig();
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+}
+
+export function getBearerToken(req: Request): string | null {
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) return null;
+  const accessToken = authorization.slice("Bearer ".length).trim();
+  return accessToken || null;
 }
 
 export async function getSupabaseUserFromRequest(req: Request): Promise<SupabaseUser | null> {
-  const authorization = req.headers.authorization;
-  if (!authorization?.startsWith("Bearer ")) return null;
-
-  const accessToken = authorization.slice("Bearer ".length).trim();
+  const accessToken = getBearerToken(req);
   if (!accessToken) return null;
 
   try {
-    const { data, error } = await getSupabaseAuthClient().auth.getUser(accessToken);
+    const { data, error } = await createSupabaseRequestClient(accessToken).auth.getUser(accessToken);
     if (error || !data.user) return null;
     return data.user;
   } catch {

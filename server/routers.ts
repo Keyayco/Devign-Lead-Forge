@@ -22,19 +22,27 @@ const leadFields = {
 };
 
 const leadInput = z.object(leadFields);
+const leadIdInput = z.object({ id: z.string().uuid("Lead id must be a UUID") });
 
-async function assertLeadAccess(id: number, userId: number) {
+async function assertLeadAccess(id: string, userId: string) {
   const existing = await getLeadById(id);
   if (!existing) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found" });
   }
-  if (existing.claimedByUserId && existing.claimedByUserId !== userId) {
+  if (existing.claimed_by && existing.claimed_by !== userId) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "This lead is locked to the claiming agent",
     });
   }
   return existing;
+}
+
+function requireAccessToken(accessToken: string | null): string {
+  if (!accessToken) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Supabase access token is required" });
+  }
+  return accessToken;
 }
 
 export const appRouter = router({
@@ -56,10 +64,12 @@ export const appRouter = router({
       )
       .query(({ input }) => listLeads(input)),
 
-    create: protectedProcedure.input(leadInput).mutation(({ input }) => createLead(input)),
+    create: protectedProcedure
+      .input(leadInput)
+      .mutation(async ({ input, ctx }) => createLead(ctx.user.id, input)),
 
     update: protectedProcedure
-      .input(leadInput.extend({ id: z.number().int().positive() }))
+      .input(leadInput.extend({ id: z.string().uuid("Lead id must be a UUID") }))
       .mutation(async ({ input, ctx }) => {
         await assertLeadAccess(input.id, ctx.user.id);
         const { id, ...fields } = input;
@@ -67,7 +77,7 @@ export const appRouter = router({
       }),
 
     remove: protectedProcedure
-      .input(z.object({ id: z.number().int().positive() }))
+      .input(leadIdInput)
       .mutation(async ({ input, ctx }) => {
         await assertLeadAccess(input.id, ctx.user.id);
         await deleteLead(input.id);
@@ -75,20 +85,20 @@ export const appRouter = router({
       }),
 
     claim: protectedProcedure
-      .input(z.object({ id: z.number().int().positive() }))
+      .input(leadIdInput)
       .mutation(async ({ input, ctx }) => {
         const existing = await getLeadById(input.id);
         if (!existing) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found" });
         }
-        if (existing.claimedByUserId) {
+        if (existing.claimed_by) {
           throw new TRPCError({
             code: "CONFLICT",
             message: "This lead has already been claimed",
           });
         }
 
-        const claimed = await claimLead(input.id, ctx.user.id);
+        const claimed = await claimLead(requireAccessToken(ctx.accessToken), input.id);
         if (!claimed) {
           throw new TRPCError({
             code: "CONFLICT",

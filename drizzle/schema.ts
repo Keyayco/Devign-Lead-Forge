@@ -1,50 +1,51 @@
 import {
-  integer,
   pgTable,
-  serial,
   text,
   timestamp,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
 /**
- * Internal agent profile keyed by the Supabase Auth user UUID.
- * The numeric id remains the stable ownership reference used by lead claims.
+ * Supabase Auth profile mirror. `id` is the authoritative auth.users UUID.
+ * This table already exists in the provisioned Supabase database.
  */
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  authUserId: varchar("auth_user_id", { length: 128 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("login_method", { length: 64 }),
-  role: varchar("role", { length: 16 }).default("user").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  lastSignedIn: timestamp("last_signed_in", { withTimezone: true }).defaultNow().notNull(),
+export const profiles = pgTable("profiles", {
+  id: uuid("id").primaryKey(),
+  fullName: text("full_name"),
+  email: text("email"),
+  role: text("role").default("user").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-
 /**
- * Lead records shared by the agent team. Claim ownership is nullable until
- * an authenticated agent claims the row; the claim update is atomic in db.ts.
+ * Existing Supabase lead table. Business fields are mapped to the UI in db.ts:
+ * company_name → Name, contact_name + contact_phone → Contact,
+ * contact_email → Email, notes → Address and optional Demo Link marker,
+ * source → Type.
  */
 export const leads = pgTable("leads", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 160 }).notNull(),
-  contact: varchar("contact", { length: 160 }).notNull(),
-  email: varchar("email", { length: 320 }).notNull(),
-  address: text("address").notNull(),
-  type: varchar("type", { length: 96 }).notNull(),
-  demoLink: varchar("demo_link", { length: 512 }).notNull(),
-  claimedByUserId: integer("claimed_by_user_id").references(() => users.id, {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  companyName: text("company_name").notNull(),
+  contactName: text("contact_name").notNull(),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  source: text("source"),
+  status: text("status").default("new"),
+  claimedBy: uuid("claimed_by").references(() => profiles.id, {
     onDelete: "set null",
   }),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  notes: text("notes"),
+  createdById: uuid("created_by_id").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
+export type Profile = typeof profiles.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = typeof leads.$inferInsert;

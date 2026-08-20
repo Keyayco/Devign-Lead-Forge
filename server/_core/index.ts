@@ -3,10 +3,8 @@ import express, { type Express } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -26,8 +24,8 @@ async function findAvailablePort(startPort = 3000): Promise<number> {
 }
 
 /**
- * Build the API application without starting a long-lived listener. This is
- * what makes the same route surface usable by Vercel's Node function runtime.
+ * Build the API application without starting a long-lived listener. Vercel's
+ * function imports this with serveClient=false, so it only mounts tRPC.
  */
 export async function createApp(
   options: { serveClient?: boolean; devServer?: ReturnType<typeof createServer> } = {},
@@ -37,7 +35,6 @@ export async function createApp(
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ limit: "10mb", extended: true }));
-  registerStorageProxy(app);
   app.use(
     "/api/trpc",
     createExpressMiddleware({
@@ -48,8 +45,10 @@ export async function createApp(
 
   if (serveClient) {
     if (process.env.NODE_ENV === "development") {
+      const { setupVite } = await import("./vite");
       await setupVite(app, options.devServer ?? createServer(app));
     } else {
+      const { serveStatic } = await import("./vite");
       serveStatic(app);
     }
   }
@@ -65,7 +64,7 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    console.log(`Port ${preferredPort} is busy, using port ${port}`);
   }
 
   server.listen(port, () => {
@@ -73,8 +72,6 @@ async function startServer() {
   });
 }
 
-// Vercel imports this module from api/[...path].ts; local development and
-// the managed preview runtime still uses the standalone listener.
 if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
   startServer().catch(console.error);
 }

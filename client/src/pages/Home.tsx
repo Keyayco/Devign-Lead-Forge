@@ -64,9 +64,9 @@ function LeadWorkspace() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [claimStatus, setClaimStatus] = useState<"all" | "claimed" | "unclaimed">("all");
   const [formOpen, setFormOpen] = useState(false);
-  const [editingLeadId, setEditingLeadId] = useState<number | null>(null);
+  const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [form, setForm] = useState<LeadFormState>(emptyForm);
-  const [deleteLeadId, setDeleteLeadId] = useState<number | null>(null);
+  const [deleteLeadId, setDeleteLeadId] = useState<string | null>(null);
 
   const queryInput = useMemo(
     () => ({ search: search.trim() || undefined, type: typeFilter, claimStatus }),

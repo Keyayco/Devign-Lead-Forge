@@ -59,3 +59,26 @@
 - [x] Diagnose Vercel Function runtime configuration requirements for Node.js.
 - [x] Update vercel.json to use the supported Node runtime format.
 - [x] Verify build and push the runtime fix to GitHub Keyayco/Devign-Lead-Forge main.
+
+## Supabase UUID Profiles & Vercel Repair Specification
+
+- [x] Inspect package.json, vite.config.ts, server files, and API entrypoint for TypeScript errors and Manus runtime artifacts.
+- [x] Migrate Drizzle schema to UUID profiles (`profiles.id` linking to `auth.users.id`) and UUID leads (`leads.id`, `leads.created_by_id`, `leads.claimed_by`).
+- [x] Refactor server/db.ts and server/routers.ts to use atomic `claim_lead` and server-side bearer verification.
+- [x] Refactor Vercel API entrypoint (`api/[...path].ts`) and express app to export a clean serverless handler without dev middleware.
+- [x] Remove `vite-plugin-manus-runtime` and fix plugin types in `vite.config.ts`.
+- [x] Run typecheck, vitest, production build, and push repaired project to GitHub main.
+
+## Approved Existing-Schema Mapping
+
+- [x] Implement the approved mapping without database changes: Name → company_name; Contact → contact_name plus contact_phone; Email → contact_email; Address → notes; Type → source; Demo Link → an explicit `Demo Link:` marker in notes.
+- [x] Preserve title/status/created_by_id/claimed_by UUID fields and use public.claim_lead(p_lead_id uuid) for atomic claiming.
+- [x] Replace serial users and numeric ownership references in active code with profiles UUIDs.
+- [x] Remove active Manus runtime/plugin/debug/storage/notification dependencies and isolate local Vite middleware from Vercel production.
+- [x] Verify the standalone Vercel API, Supabase Auth bearer flow, RLS-compatible CRUD, tests, build, and push the repair to GitHub main.
+
+## Final Deployment Verification Gaps
+
+- [ ] Push the repaired project to GitHub main and record the resulting commit hash.
+- [ ] Perform a live authenticated CRUD and atomic-claim verification against the provisioned Supabase/Vercel stack, or document the exact environment blocker if credentials or deployed URL are unavailable.
+- [ ] Verify direct browser/PostgREST table access remains denied by the configured RLS/default-deny policy.
