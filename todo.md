@@ -43,3 +43,7 @@
 - [x] Update Supabase migrations, RLS/security guidance, and setup documentation for password auth.
 - [x] Add tests for Supabase Auth configuration, password auth boundaries, and regressions.
 - [x] Run type checks, tests, production build, responsive verification, and save a new checkpoint.
+
+## GitHub Push
+
+- [ ] Push the verified Supabase Auth password-login project to Keyayco/Devign-Lead-Forge on the main branch.
