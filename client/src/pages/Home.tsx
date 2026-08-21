@@ -59,7 +59,7 @@ export default function Home() {
 }
 
 function LeadWorkspace() {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [claimStatus, setClaimStatus] = useState<"all" | "claimed" | "unclaimed">("all");
@@ -72,7 +72,9 @@ function LeadWorkspace() {
     () => ({ search: search.trim() || undefined, type: typeFilter, claimStatus }),
     [search, typeFilter, claimStatus],
   );
-  const leadsQuery = trpc.leads.list.useQuery(queryInput);
+  const leadsQuery = trpc.leads.list.useQuery(queryInput, {
+    enabled: isAuthenticated,
+  });
   const utils = trpc.useUtils();
 
   const createMutation = trpc.leads.create.useMutation({

@@ -92,3 +92,17 @@
 - [x] Add a UI or hook-level test that verifies the unconfigured Supabase Auth state shows the configuration warning and/or throws the expected error during sign-in/sign-up.
 - [x] Add a hook-level test for `useAuth` that verifies `login` or `signUp` throws `Supabase Auth is not configured` when the Supabase client is null.
 - [x] Include `.tsx` client tests in Vitest and rerun the suite to confirm the useAuth hook regression executes.
+
+## Post-Login Auth Race & Blank-Screen Fix
+
+- [x] Unify `useAuth` into a single deterministic bootstrap state (`loading`, `authenticated`, `unauthenticated`) preventing unauthenticated renders.
+- [x] Ensure single `onAuthStateChange` listener handling all auth events (`INITIAL_SESSION`, `SIGNED_IN`, `SIGNED_OUT`, `TOKEN_REFRESHED`, `USER_UPDATED`) without race conditions.
+- [x] Gate tRPC protected queries on `isAuthenticated` so unauthenticated queries do not fire or retry prematurely.
+- [x] Synchronize tRPC client header generation with the latest Supabase session token.
+- [x] Add comprehensive auth lifecycle regression tests covering loading, login, logout, refresh, and no-blank-state behavior.
+- [x] Pass TypeScript checks, Vitest suite, Vercel production build, and push to GitHub.
+- [x] Add explicit `authStatus: 'loading' | 'authenticated' | 'unauthenticated'` in `useAuth`.
+- [x] Gate workspace queries on `isAuthenticated` in `Home.tsx`.
+- [x] Add regression tests for authenticated startup, session persistence restoration across refresh, and unauthenticated query suppression.
+- [x] Add regression tests for query suppression during loading/unauthenticated states and no blank root state.
+- [x] Add explicit query suppression and no-blank-state render tests in useAuth.test.tsx.

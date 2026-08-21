@@ -13,21 +13,24 @@ type PasswordCredentials = {
   password: string;
 };
 
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
   const utils = trpc.useUtils();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
-  const [authError, setAuthError] = useState<Error | null>(null);
+  const [authError, setAuthError] = useState<Error | null>(() => (supabase ? null : new Error("Supabase Auth is not configured")));
 
   useEffect(() => {
     if (!supabase) {
-      setAuthError(new Error("Supabase Auth is not configured"));
       setSessionLoading(false);
       return;
     }
 
     let mounted = true;
+
+    // Read initial session authoritatively
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
       if (error) setAuthError(error);
@@ -35,13 +38,19 @@ export function useAuth(options?: UseAuthOptions) {
       setSessionLoading(false);
     });
 
+    // Single authoritative subscription for all auth events
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!mounted) return;
       setSession(nextSession);
       setSessionLoading(false);
-      if (!nextSession) utils.auth.me.setData(undefined, null);
-      else void utils.auth.me.invalidate();
+
+      if (event === "SIGNED_OUT" || !nextSession) {
+        utils.auth.me.setData(undefined, null);
+      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+        void utils.auth.me.invalidate();
+      }
     });
 
     return () => {
@@ -50,6 +59,7 @@ export function useAuth(options?: UseAuthOptions) {
     };
   }, [utils]);
 
+  // Only run meQuery when session exists and initial session bootstrap is finished
   const meQuery = trpc.auth.me.useQuery(undefined, {
     enabled: Boolean(session) && !sessionLoading,
     retry: false,
@@ -83,15 +93,20 @@ export function useAuth(options?: UseAuthOptions) {
 
   const state = useMemo(() => {
     const user = meQuery.data ?? null;
+    const isLoading = sessionLoading;
+    const isAuthenticated = Boolean(session);
+    const authStatus: AuthStatus = isLoading ? "loading" : isAuthenticated ? "authenticated" : "unauthenticated";
+
     return {
       user,
       session,
       supabaseUser: session?.user ?? null,
-      loading: sessionLoading || (Boolean(session) && meQuery.isLoading),
+      loading: isLoading,
+      authStatus,
       error: authError ?? meQuery.error ?? null,
-      isAuthenticated: Boolean(session && user),
+      isAuthenticated,
     };
-  }, [authError, meQuery.data, meQuery.error, meQuery.isLoading, session, sessionLoading]);
+  }, [authError, meQuery.data, meQuery.error, session, sessionLoading]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated || state.loading || state.isAuthenticated) return;
