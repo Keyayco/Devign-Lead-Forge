@@ -141,5 +141,5 @@
 - [x] Keep Vite middleware and storage proxy out of the Vercel `serveClient: false` production API path.
 - [x] Verify Supabase Auth imports and bearer client APIs against the installed package version.
 - [x] Require `pnpm check` to pass with zero TypeScript errors before redeploying.
-- [ ] Re-test the public `/api/trpc/leads.create?batch=1` endpoint after the user deploys the new commit.
+- [x] Re-test the public `/api/trpc/leads.create?batch=1` endpoint after the user deploys the new commit.
 - [x] Make `build:vercel` run the TypeScript check before Vite so deployment cannot complete with compiler errors.
