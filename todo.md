@@ -117,3 +117,13 @@
 - [x] Add a DashboardLayout regression test proving a session renders the workspace rather than AuthPanel immediately after sign-in.
 - [x] Add a DashboardLayout regression test proving a session renders the workspace rather than AuthPanel immediately after sign-in.
 - [x] Add explicit `INITIAL_SESSION` coverage proving persisted sessions remain authenticated after refresh.
+
+## Supabase Lead Creation JSON Error
+
+- [x] Trace lead form → tRPC mutation → `/api/trpc` → Vercel function → router → database.
+- [x] Capture and classify the lead-create response status, Content-Type, body category, and bearer-header presence without logging tokens.
+- [x] Verify `/api/*` is not intercepted by the SPA rewrite and that `api/[...path].ts` returns tRPC JSON.
+- [x] Confirm authenticated UUID ownership reaches `created_by_id` and inspect database errors only after API routing is confirmed.
+- [x] Add JSON response regression tests for successful, unauthenticated, invalid-payload, and database-failure lead creation.
+- [x] Return the Express handler from the Vercel catch-all so POST mutation response completion is attached to the serverless invocation.
+- [x] Run type checks, 31 Vitest tests, Vercel build, and diff hygiene verification.

@@ -6,5 +6,5 @@ let appPromise: ReturnType<typeof createApp> | undefined;
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   appPromise ??= createApp({ serveClient: false });
   const app = await appPromise;
-  app(req, res);
+  return app(req, res);
 }
