@@ -127,3 +127,19 @@
 - [x] Add JSON response regression tests for successful, unauthenticated, invalid-payload, and database-failure lead creation.
 - [x] Return the Express handler from the Vercel catch-all so POST mutation response completion is attached to the serverless invocation.
 - [x] Run type checks, 31 Vitest tests, Vercel build, and diff hygiene verification.
+
+## Production Network Inspection & Routing
+
+- [x] Capture deployed production request URL, method, status, Content-Type, and body preview.
+- [x] Test deployed API endpoint directly without credentials to check whether Vercel serves JSON or HTML.
+- [x] Compare `vercel.json` rewrites and catch-all handler behavior with the production request destination.
+- [x] Produce the required production report before modifying any code.
+
+## Vercel API TypeScript Architecture Repair
+
+- [x] Use callable Express `Application` types in the Vercel adapter and development middleware signatures.
+- [x] Keep Vite middleware and storage proxy out of the Vercel `serveClient: false` production API path.
+- [x] Verify Supabase Auth imports and bearer client APIs against the installed package version.
+- [x] Require `pnpm check` to pass with zero TypeScript errors before redeploying.
+- [ ] Re-test the public `/api/trpc/leads.create?batch=1` endpoint after the user deploys the new commit.
+- [x] Make `build:vercel` run the TypeScript check before Vite so deployment cannot complete with compiler errors.

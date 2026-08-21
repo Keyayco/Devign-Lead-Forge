@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createApp } from "../server/_core/index";
+import { createApiApp } from "../server/_core/api";
 
-let appPromise: ReturnType<typeof createApp> | undefined;
+let appPromise: Promise<ReturnType<typeof createApiApp>> | undefined;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  appPromise ??= createApp({ serveClient: false });
+  appPromise ??= Promise.resolve(createApiApp());
   const app = await appPromise;
   return app(req, res);
 }
