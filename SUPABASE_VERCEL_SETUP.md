@@ -82,6 +82,8 @@ Use the Supabase **Session Pooler** connection string from **Project Settings â†
 
 The old variables `VITE_APP_ID`, `VITE_OAUTH_PORTAL_URL`, `OAUTH_SERVER_URL`, `OWNER_OPEN_ID`, `OWNER_NAME`, `JWT_SECRET`, `BUILT_IN_FORGE_API_URL`, `BUILT_IN_FORGE_API_KEY`, `VITE_FRONTEND_FORGE_API_URL`, and `VITE_FRONTEND_FORGE_API_KEY` are not required by the standalone deployment. Remove them from the Vercel project only after confirming that no separate application uses them.
 
+If the browser displays **Supabase Auth is not configured**, the deployed frontend was built without one or both public Vite variables. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` under the Vercel projectâ€™s **Environment Variables** for the environment being tested, then create a new deployment. Vite embeds `VITE_*` values into the static browser bundle at build time; changing a Vercel variable without redeploying does not change an already-built deployment. The UI now shows the exact variable names and redeploy instruction instead of leaving the failure ambiguous.
+
 ## Vercel project settings
 
 The checked-in `vercel.json` is intentionally API-safe.

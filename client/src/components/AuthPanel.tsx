@@ -5,9 +5,12 @@ import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { toast } from "sonner";
 
+import { supabase } from "@/lib/supabase";
+
 export function AuthPanel() {
   const { login, signUp } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const isConfigured = Boolean(supabase);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -55,6 +58,13 @@ export function AuthPanel() {
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Team access</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{isSignUp ? "Create your account" : "Welcome back"}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">{isSignUp ? "Set up a password-protected agent account." : "Sign in to open the shared lead queue."}</p>
+
+          {!isConfigured && (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-bold">Supabase Auth keys missing</p>
+              <p className="mt-1 text-xs leading-5">Please configure <code className="font-mono font-semibold">VITE_SUPABASE_URL</code> and <code className="font-mono font-semibold">VITE_SUPABASE_PUBLISHABLE_KEY</code> in your Vercel project environment variables and trigger a redeploy.</p>
+            </div>
+          )}
 
           <form onSubmit={submit} className="mt-8 space-y-4">
             {isSignUp && <div><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor="full-name">Full name</label><Input id="full-name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Alex Morgan" autoComplete="name" required className="h-11 rounded-xl border-slate-200 bg-slate-50/60" /></div>}

@@ -82,3 +82,13 @@
 - [x] Push the repaired project to GitHub main and record the resulting commit hash (`8270f78c1739908cca67058acc49958d73b95592`).
 - [x] Document the live authenticated CRUD and atomic-claim verification blocker: the sandbox has the Supabase database contract and Auth smoke-test configuration, but no deployed Vercel URL or team test credentials were supplied; unit tests cover the protected procedures and RPC path.
 - [x] Verify the direct browser/PostgREST boundary: live inspection confirms RLS is enabled, anonymous requests have no lead policies, and authenticated policies enforce ownership conditions; the API does not use browser table access for CRUD.
+
+## Supabase Auth Configuration Repair
+
+- [x] Inspect the Supabase Auth client initialization and error messages in `client/src/_core/hooks/useAuth.ts` or `server/supabaseAuth.ts`.
+- [x] Ensure public Supabase URL and publishable key variables are correctly read from Vite envs (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`).
+- [x] Verify what happens when Supabase env vars are missing or unconfigured in the browser runtime.
+- [x] Add explicit error feedback and test coverage for unconfigured Supabase Auth.
+- [x] Add a UI or hook-level test that verifies the unconfigured Supabase Auth state shows the configuration warning and/or throws the expected error during sign-in/sign-up.
+- [x] Add a hook-level test for `useAuth` that verifies `login` or `signUp` throws `Supabase Auth is not configured` when the Supabase client is null.
+- [x] Include `.tsx` client tests in Vitest and rerun the suite to confirm the useAuth hook regression executes.

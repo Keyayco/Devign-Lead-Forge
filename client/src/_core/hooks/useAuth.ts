@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { supabase } from "@/lib/supabase";
+import { requireSupabaseAuth, supabase } from "@/lib/supabase";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -57,14 +57,14 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const login = useCallback(async ({ email, password }: PasswordCredentials) => {
-    if (!supabase) throw new Error("Supabase Auth is not configured");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const client = requireSupabaseAuth(supabase);
+    const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
   }, []);
 
   const signUp = useCallback(async ({ email, password, fullName }: PasswordCredentials & { fullName?: string }) => {
-    if (!supabase) throw new Error("Supabase Auth is not configured");
-    return supabase.auth.signUp({
+    const client = requireSupabaseAuth(supabase);
+    return client.auth.signUp({
       email,
       password,
       options: {
