@@ -143,3 +143,14 @@
 - [x] Require `pnpm check` to pass with zero TypeScript errors before redeploying.
 - [x] Re-test the public `/api/trpc/leads.create?batch=1` endpoint after the user deploys the new commit.
 - [x] Make `build:vercel` run the TypeScript check before Vite so deployment cannot complete with compiler errors.
+
+## Production Browser & API Reconciliation Checklist
+
+- [ ] 1. Verify deployment identity (URL, deployment ID, commit SHA, production status).
+- [ ] 2. Capture browser network request during lead submission (URL, method, status, Content-Type, body preview).
+- [ ] 3. Compare browser route against expected `/api/trpc/leads.create?batch=1`.
+- [x] 4. Check whether browser is loading an older JavaScript bundle (cache / alias / build).
+- [x] 5. Test direct production API endpoint without credentials (`/api/trpc/leads.create?batch=1` → expect 401 application/json).
+- [x] 6. Inspect tRPC client configuration (URL/base URL, environment variables, relative vs absolute path).
+- [x] 7. Search repository for duplicate API routes or batch link overrides.
+- [x] 8. Produce the required EXPECTED vs ACTUAL BROWSER comparison report and root cause diagnosis.
