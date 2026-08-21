@@ -22,6 +22,7 @@ import {
 import { AuthPanel } from "./AuthPanel";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, ShieldCheck } from "lucide-react";
+import * as React from "react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -37,7 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { loading, authStatus } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -45,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) return <DashboardLayoutSkeleton />;
 
-  if (!user) return <AuthPanel />;
+  if (authStatus === "unauthenticated") return <AuthPanel />;
 
   return (
     <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>

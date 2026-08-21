@@ -28,6 +28,9 @@ vi.mock("@/lib/supabase", () => {
           };
         }),
         signInWithPassword: vi.fn(async ({ email }) => {
+          if (email === "fail@example.com") {
+            return { data: { session: null, user: null }, error: new Error("Invalid credentials") };
+          }
           currentMockSession = {
             access_token: "mock-token-123",
             user: { id: "user-uuid-1", email },
@@ -45,6 +48,9 @@ vi.mock("@/lib/supabase", () => {
     requireSupabaseAuth: () => ({
       auth: {
         signInWithPassword: async ({ email }: any) => {
+          if (email === "fail@example.com") {
+            return { data: { session: null, user: null }, error: new Error("Invalid credentials") };
+          }
           currentMockSession = {
             access_token: "mock-token-123",
             user: { id: "user-uuid-1", email },
@@ -59,7 +65,7 @@ vi.mock("@/lib/supabase", () => {
   };
 });
 
-import { useAuth } from "./useAuth";
+import { AuthProvider, useAuth } from "./useAuth";
 
 function createWrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,7 +76,9 @@ function createWrapper() {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <trpc.Provider client={client} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
       </trpc.Provider>
     );
   };
@@ -114,6 +122,26 @@ describe("useAuth comprehensive lifecycle", () => {
     expect(result.current.authStatus).toBe("authenticated");
   });
 
+  it("accepts INITIAL_SESSION with a persisted session and keeps the workspace authenticated", async () => {
+    currentMockSession = {
+      access_token: "initial-session-token",
+      user: { id: "user-uuid-1", email: "agent@example.com" },
+    };
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      registeredAuthListener?.("INITIAL_SESSION", currentMockSession);
+    });
+
+    expect(result.current.authStatus).toBe("authenticated");
+    expect(result.current.session?.access_token).toBe("initial-session-token");
+  });
+
   it("handles successful sign-in and updates auth state deterministically", async () => {
     const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
 
@@ -128,6 +156,21 @@ describe("useAuth comprehensive lifecycle", () => {
     expect(result.current.session).not.toBeNull();
     expect(result.current.authStatus).toBe("authenticated");
     expect(result.current.supabaseUser?.email).toBe("agent@example.com");
+  });
+
+  it("keeps the user unauthenticated and exposes the safe Supabase error after failed sign-in", async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.authStatus).toBe("unauthenticated");
+    });
+
+    await expect(
+      result.current.login({ email: "fail@example.com", password: "wrong-password" }),
+    ).rejects.toThrow("Invalid credentials");
+
+    expect(result.current.authStatus).toBe("unauthenticated");
+    expect(result.current.session).toBeNull();
   });
 
   it("handles token refresh and SIGNED_OUT correctly", async () => {

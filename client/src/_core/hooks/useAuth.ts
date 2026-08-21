@@ -1,22 +1,44 @@
 import { trpc } from "@/lib/trpc";
 import { requireSupabaseAuth, supabase } from "@/lib/supabase";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-type UseAuthOptions = {
-  redirectOnUnauthenticated?: boolean;
-  redirectPath?: string;
-};
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 type PasswordCredentials = {
   email: string;
   password: string;
 };
 
-export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+type AuthUser = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
 
-export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
+type AuthContextValue = {
+  user: AuthUser | null;
+  session: Session | null;
+  supabaseUser: SupabaseUser | null;
+  loading: boolean;
+  authStatus: AuthStatus;
+  error: Error | null;
+  isAuthenticated: boolean;
+  login: (credentials: PasswordCredentials) => Promise<void>;
+  signUp: (credentials: PasswordCredentials & { fullName?: string }) => Promise<{ data: { session: Session | null; user: SupabaseUser | null }; error: Error | null }>;
+
+  logout: () => Promise<void>;
+  refresh: () => Promise<unknown>;
+  authUser: SupabaseUser | null;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+function authDiagnostic(label: string, details: Record<string, unknown>) {
+  if (import.meta.env.DEV) console.info(`[Auth] ${label}`, details);
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const utils = trpc.useUtils();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -29,22 +51,17 @@ export function useAuth(options?: UseAuthOptions) {
     }
 
     let mounted = true;
-
-    // Read initial session authoritatively
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return;
-      if (error) setAuthError(error);
-      setSession(data.session);
-      setSessionLoading(false);
-    });
-
-    // Single authoritative subscription for all auth events
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession);
       setSessionLoading(false);
+      authDiagnostic("AUTH_EVENT", {
+        event,
+        hasSession: Boolean(nextSession),
+        userId: nextSession?.user?.id ?? null,
+      });
 
       if (event === "SIGNED_OUT" || !nextSession) {
         utils.auth.me.setData(undefined, null);
@@ -53,13 +70,24 @@ export function useAuth(options?: UseAuthOptions) {
       }
     });
 
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setAuthError(error);
+      setSession(data.session);
+      setSessionLoading(false);
+      authDiagnostic("GET_SESSION", {
+        hasSession: Boolean(data.session),
+        userId: data.session?.user?.id ?? null,
+        error: error?.message ?? null,
+      });
+    });
+
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
   }, [utils]);
 
-  // Only run meQuery when session exists and initial session bootstrap is finished
   const meQuery = trpc.auth.me.useQuery(undefined, {
     enabled: Boolean(session) && !sessionLoading,
     retry: false,
@@ -68,13 +96,20 @@ export function useAuth(options?: UseAuthOptions) {
 
   const login = useCallback(async ({ email, password }: PasswordCredentials) => {
     const client = requireSupabaseAuth(supabase);
-    const { error } = await client.auth.signInWithPassword({ email, password });
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    authDiagnostic("SIGN_IN", {
+      success: !error,
+      hasSession: Boolean(data.session),
+      userId: data.user?.id ?? null,
+      error: error?.message ?? null,
+    });
     if (error) throw error;
+    if (data.session) setSession(data.session);
   }, []);
 
   const signUp = useCallback(async ({ email, password, fullName }: PasswordCredentials & { fullName?: string }) => {
     const client = requireSupabaseAuth(supabase);
-    return client.auth.signUp({
+    const result = await client.auth.signUp({
       email,
       password,
       options: {
@@ -82,6 +117,14 @@ export function useAuth(options?: UseAuthOptions) {
         emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
       },
     });
+    authDiagnostic("SIGN_UP", {
+      success: !result.error,
+      hasSession: Boolean(result.data.session),
+      userId: result.data.user?.id ?? null,
+      error: result.error?.message ?? null,
+    });
+    if (!result.error && result.data.session) setSession(result.data.session);
+    return result;
   }, []);
 
   const logout = useCallback(async () => {
@@ -93,33 +136,37 @@ export function useAuth(options?: UseAuthOptions) {
 
   const state = useMemo(() => {
     const user = meQuery.data ?? null;
-    const isLoading = sessionLoading;
-    const isAuthenticated = Boolean(session);
-    const authStatus: AuthStatus = isLoading ? "loading" : isAuthenticated ? "authenticated" : "unauthenticated";
-
-    return {
+    const authStatus: AuthStatus = sessionLoading ? "loading" : session ? "authenticated" : "unauthenticated";
+    const value: AuthContextValue = {
       user,
       session,
       supabaseUser: session?.user ?? null,
-      loading: isLoading,
+      loading: sessionLoading,
       authStatus,
-      error: authError ?? meQuery.error ?? null,
-      isAuthenticated,
+      error: authError ?? (meQuery.error ? new Error(meQuery.error.message) : null),
+      isAuthenticated: Boolean(session),
+      login,
+      signUp,
+      logout,
+      refresh: () => meQuery.refetch(),
+      authUser: session?.user ?? null,
     };
-  }, [authError, meQuery.data, meQuery.error, session, sessionLoading]);
+    return value;
+  }, [authError, login, logout, meQuery.data, meQuery.error, meQuery.refetch, session, sessionLoading, signUp]);
 
   useEffect(() => {
-    if (!redirectOnUnauthenticated || state.loading || state.isAuthenticated) return;
-    if (typeof window === "undefined" || !redirectPath) return;
-    if (window.location.pathname !== redirectPath) window.location.href = redirectPath;
-  }, [redirectOnUnauthenticated, redirectPath, state.isAuthenticated, state.loading]);
+    authDiagnostic("AUTH_STATE", {
+      status: state.authStatus,
+      userId: state.supabaseUser?.id ?? null,
+      hasSession: Boolean(state.session),
+    });
+  }, [state.authStatus, state.session, state.supabaseUser?.id]);
 
-  return {
-    ...state,
-    login,
-    signUp,
-    logout,
-    refresh: () => meQuery.refetch(),
-    authUser: state.supabaseUser as SupabaseUser | null,
-  };
+  return createElement(AuthContext.Provider, { value: state }, children);
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  return context;
 }

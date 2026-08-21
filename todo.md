@@ -106,3 +106,14 @@
 - [x] Add regression tests for authenticated startup, session persistence restoration across refresh, and unauthenticated query suppression.
 - [x] Add regression tests for query suppression during loading/unauthenticated states and no blank root state.
 - [x] Add explicit query suppression and no-blank-state render tests in useAuth.test.tsx.
+
+## Supabase Sign-In Freeze Diagnosis & Repair
+
+- [x] Inspect `useAuth.ts`, `DashboardLayout.tsx`, and `AuthPanel.tsx` to trace why successful sign-in remains on the login screen.
+- [x] Add safe non-token auth diagnostic logging for sign-in, session resolution, and event listener updates.
+- [x] Fix any state machine disconnect where Supabase session is present but `isAuthenticated` or workspace rendering condition lags.
+- [x] Add targeted regression tests covering successful sign-in transitioning to workspace, session refresh restoration, and failed sign-in error display.
+- [x] Pass type checks, test suite, and Vercel build.
+- [x] Add a DashboardLayout regression test proving a session renders the workspace rather than AuthPanel immediately after sign-in.
+- [x] Add a DashboardLayout regression test proving a session renders the workspace rather than AuthPanel immediately after sign-in.
+- [x] Add explicit `INITIAL_SESSION` coverage proving persisted sessions remain authenticated after refresh.
