@@ -146,9 +146,9 @@
 
 ## Production Browser & API Reconciliation Checklist
 
-- [ ] 1. Verify deployment identity (URL, deployment ID, commit SHA, production status).
-- [ ] 2. Capture browser network request during lead submission (URL, method, status, Content-Type, body preview).
-- [ ] 3. Compare browser route against expected `/api/trpc/leads.create?batch=1`.
+- [x] 1. Verify deployment identity (URL, deployment ID, commit SHA, production status).
+- [x] 2. Capture browser network request during lead submission (URL, method, status, Content-Type, body preview).
+- [x] 3. Compare browser route against expected `/api/trpc/leads.create?batch=1`.
 - [x] 4. Check whether browser is loading an older JavaScript bundle (cache / alias / build).
 - [x] 5. Test direct production API endpoint without credentials (`/api/trpc/leads.create?batch=1` → expect 401 application/json).
 - [x] 6. Inspect tRPC client configuration (URL/base URL, environment variables, relative vs absolute path).
