@@ -76,3 +76,16 @@ describe("Supabase Auth authorization boundary", () => {
     });
   });
 });
+
+  it("returns null user when bearer token validation fails", async () => {
+    vi.mocked(auth.getSupabaseUserFromRequest).mockResolvedValue(null);
+
+    const context = await createContext({
+      req: { headers: { authorization: "Bearer invalid-token" } } as never,
+      res: {} as never,
+      info: {} as never,
+    });
+
+    expect(context.user).toBeNull();
+    expect(context.accessToken).toBe("test-access-token");
+  });

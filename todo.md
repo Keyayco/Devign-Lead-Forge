@@ -176,3 +176,13 @@
 
 - ROOT CAUSE:
   The public Vercel alias `https://devign-lead-forge.vercel.app/` pointed to an older deployment ID/cache where the Vercel function routing was not yet decoupled from local Vite/static middleware. Once accessed via the fresh unique deployment URL (`https://devign-lead-forge-98ehq9nz4-devign-studios.vercel.app`), the API endpoint correctly responds with `401 application/json` for unauthenticated requests and executes successfully for authenticated agent sessions.
+
+## Authenticated Lead Submission Debugging Checklist
+
+- [x] 1. Inspect exact client bearer header construction in `client/src/main.tsx`.
+- [x] 2. Inspect server-side token extraction and validation in `server/supabaseAuth.ts`.
+- [x] 3. Inspect request context creation and profile resolution in `server/_core/context.ts`.
+- [x] 4. Inspect `leads.create` procedure implementation and identity mapping in `server/routers.ts`.
+- [x] 5. Inspect database insert helper in `server/db.ts`.
+- [x] 6. Add focused regression tests for bearer token validation, unauthenticated 401 JSON, and authenticated lead insertion.
+- [x] 7. Populate the required REQUIRED FINAL REPORT (authenticated request, authorization header, server resolution steps, root cause, fix).
