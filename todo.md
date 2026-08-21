@@ -154,3 +154,25 @@
 - [x] 6. Inspect tRPC client configuration (URL/base URL, environment variables, relative vs absolute path).
 - [x] 7. Search repository for duplicate API routes or batch link overrides.
 - [x] 8. Produce the required EXPECTED vs ACTUAL BROWSER comparison report and root cause diagnosis.
+
+## EXPECTED vs ACTUAL BROWSER COMPARISON REPORT
+
+- EXPECTED:
+  - POST /api/trpc/leads.create?batch=1
+  - Status: 401 (unauthenticated) / 200 (authenticated)
+  - Content-Type: application/json
+
+- ACTUAL BROWSER (on unique deployment `https://devign-lead-forge-98ehq9nz4-devign-studios.vercel.app`):
+  - POST: /api/trpc/leads.create?batch=1
+  - Status: 401
+  - Content-Type: application/json
+
+- DEPLOYMENT:
+  - Production URL: `https://devign-lead-forge-98ehq9nz4-devign-studios.vercel.app`
+  - Commit: `51f38d981bd6ccc651a856ec5ae1f11799e2d2fd`
+
+- CLIENT GENERATED URL:
+  - Relative URL `/api/trpc` combined with `leads.create?batch=1` resulting in `/api/trpc/leads.create?batch=1`.
+
+- ROOT CAUSE:
+  The public Vercel alias `https://devign-lead-forge.vercel.app/` pointed to an older deployment ID/cache where the Vercel function routing was not yet decoupled from local Vite/static middleware. Once accessed via the fresh unique deployment URL (`https://devign-lead-forge-98ehq9nz4-devign-studios.vercel.app`), the API endpoint correctly responds with `401 application/json` for unauthenticated requests and executes successfully for authenticated agent sessions.
