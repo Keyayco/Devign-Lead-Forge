@@ -1,7 +1,7 @@
 import type { Request } from "express";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
-export type { SupabaseUser };
+type AwaitedUser = Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
+export type SupabaseUser = NonNullable<AwaitedUser["data"]["user"]>;
 import { ENV } from "./_core/env";
 
 function requireSupabaseConfig() {
@@ -30,15 +30,23 @@ export function createSupabaseRequestClient(accessToken: string): SupabaseClient
   });
 }
 
-export function getBearerToken(req: Request): string | null {
-  const authorization = req.get("authorization") || req.headers.authorization;
+interface RequestLike {
+  headers: {
+    authorization?: string | string[];
+  };
+  get?(name: string): string | undefined;
+}
+
+export function getBearerToken(req: RequestLike): string | null {
+  const auth = typeof req.get === "function" ? req.get("authorization") : undefined;
+  const authorization = auth || req.headers?.authorization;
   const authHeader = Array.isArray(authorization) ? authorization[0] : authorization;
   if (!authHeader?.startsWith("Bearer ")) return null;
   const accessToken = authHeader.slice("Bearer ".length).trim();
   return accessToken || null;
 }
 
-export async function getSupabaseUserFromRequest(req: Request): Promise<SupabaseUser | null> {
+export async function getSupabaseUserFromRequest(req: RequestLike): Promise<SupabaseUser | null> {
   const accessToken = getBearerToken(req);
   if (!accessToken) return null;
 
