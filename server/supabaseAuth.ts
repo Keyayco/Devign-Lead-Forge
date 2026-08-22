@@ -1,5 +1,5 @@
-import { createClient, type SupabaseClient, type User as SupabaseUser } from "@supabase/supabase-js";
 import type { Request } from "express";
+import { createClient, type SupabaseClient, type User as SupabaseUser } from "@supabase/supabase-js";
 import { ENV } from "./_core/env";
 
 function requireSupabaseConfig() {
