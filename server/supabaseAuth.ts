@@ -40,7 +40,7 @@ export async function getSupabaseUserFromRequest(req: Request): Promise<Supabase
   if (!accessToken) return null;
 
   try {
-    const { data, error } = await createSupabaseRequestClient(accessToken).auth.getUser(accessToken);
+    const { data, error } = await createSupabaseRequestClient(accessToken).auth.getUser();
     if (error || !data.user) return null;
     return data.user;
   } catch {
