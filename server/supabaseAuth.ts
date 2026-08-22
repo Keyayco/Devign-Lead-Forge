@@ -28,14 +28,14 @@ export function createSupabaseRequestClient(accessToken: string): SupabaseClient
   });
 }
 
-export function getBearerToken(req: Request): string | null {
+export function getBearerToken(req: Request | { headers: { authorization?: string } }): string | null {
   const authorization = req.headers.authorization;
   if (!authorization?.startsWith("Bearer ")) return null;
   const accessToken = authorization.slice("Bearer ".length).trim();
   return accessToken || null;
 }
 
-export async function getSupabaseUserFromRequest(req: Request): Promise<SupabaseUser | null> {
+export async function getSupabaseUserFromRequest(req: Request | { headers: { authorization?: string } }): Promise<SupabaseUser | null> {
   const accessToken = getBearerToken(req);
   if (!accessToken) return null;
 
