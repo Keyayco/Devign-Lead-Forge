@@ -29,7 +29,7 @@ export function createSupabaseRequestClient(accessToken: string): SupabaseClient
   });
 }
 
-export function getBearerToken(req: { headers: { authorization?: string | string[] } }): string | null {
+export function getBearerToken(req: Request): string | null {
   const authorization = req.headers.authorization;
   const authHeader = Array.isArray(authorization) ? authorization[0] : authorization;
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -37,12 +37,14 @@ export function getBearerToken(req: { headers: { authorization?: string | string
   return accessToken || null;
 }
 
-export async function getSupabaseUserFromRequest(req: { headers: { authorization?: string | string[] } }): Promise<SupabaseUser | null> {
+export async function getSupabaseUserFromRequest(req: Request): Promise<SupabaseUser | null> {
   const accessToken = getBearerToken(req);
   if (!accessToken) return null;
 
   try {
-    const { data, error } = await createSupabaseRequestClient(accessToken).auth.getUser();
+    const client = createSupabaseRequestClient(accessToken);
+    const authClient = client.auth as unknown as { getUser: () => Promise<{ data: { user: SupabaseUser | null }, error: any }> };
+    const { data, error } = await authClient.getUser();
     if (error || !data.user) return null;
     return data.user;
   } catch {
