@@ -1,5 +1,6 @@
 import type { Request } from "express";
-import { createClient, type SupabaseClient, type User as SupabaseUser } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+export type SupabaseUser = NonNullable<Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>["data"]["user"]>;
 import { ENV } from "./_core/env";
 
 function requireSupabaseConfig() {
@@ -28,14 +29,15 @@ export function createSupabaseRequestClient(accessToken: string): SupabaseClient
   });
 }
 
-export function getBearerToken(req: Request | { headers: { authorization?: string } }): string | null {
+export function getBearerToken(req: { headers: { authorization?: string | string[] } }): string | null {
   const authorization = req.headers.authorization;
-  if (!authorization?.startsWith("Bearer ")) return null;
-  const accessToken = authorization.slice("Bearer ".length).trim();
+  const authHeader = Array.isArray(authorization) ? authorization[0] : authorization;
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const accessToken = authHeader.slice("Bearer ".length).trim();
   return accessToken || null;
 }
 
-export async function getSupabaseUserFromRequest(req: Request | { headers: { authorization?: string } }): Promise<SupabaseUser | null> {
+export async function getSupabaseUserFromRequest(req: { headers: { authorization?: string | string[] } }): Promise<SupabaseUser | null> {
   const accessToken = getBearerToken(req);
   if (!accessToken) return null;
 
