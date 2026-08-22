@@ -52,7 +52,8 @@ export async function getSupabaseUserFromRequest(req: RequestLike): Promise<Supa
 
   try {
     const client = createSupabaseRequestClient(accessToken);
-    const { data, error } = await client.auth.getUser();
+    const auth = client.auth as unknown as { getUser(): Promise<{ data: { user: SupabaseUser | null }; error: any }> };
+    const { data, error } = await auth.getUser();
     if (error || !data.user) return null;
     return data.user;
   } catch {
