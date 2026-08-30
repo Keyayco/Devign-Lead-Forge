@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createServer } from "http";
-import { createApiApp } from "../server/_core/api";
+import { createApiApp } from "../../server/_core/api";
 
 let appPromise: Promise<ReturnType<typeof createApiApp>> | undefined;
 

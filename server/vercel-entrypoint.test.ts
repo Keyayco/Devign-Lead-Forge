@@ -1,6 +1,6 @@
 import { createServer, type AddressInfo } from "node:http";
 import { describe, expect, it } from "vitest";
-import handler from "../api/[...path]";
+import handler from "../api/trpc/[...path]";
 import { createApp } from "./_core/index";
 
 describe("Vercel API entrypoint", () => {
