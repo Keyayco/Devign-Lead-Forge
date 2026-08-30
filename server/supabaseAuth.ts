@@ -1,7 +1,5 @@
-import type { Request } from "express";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-type AwaitedUser = Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
-export type SupabaseUser = NonNullable<AwaitedUser["data"]["user"]>;
+import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+export type SupabaseUser = User;
 import { ENV } from "./_core/env";
 
 function requireSupabaseConfig() {
@@ -31,7 +29,7 @@ export function createSupabaseRequestClient(accessToken: string): SupabaseClient
 }
 
 interface RequestLike {
-  headers: {
+  headers?: {
     authorization?: string | string[];
   };
   get?(name: string): string | undefined;
