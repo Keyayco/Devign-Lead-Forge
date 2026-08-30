@@ -1,5 +1,13 @@
-import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
-export type SupabaseUser = User;
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+export type SupabaseUser = {
+  id: string;
+  email?: string | null;
+  user_metadata?: {
+    full_name?: string | null;
+    name?: string | null;
+  };
+};
 import { ENV } from "./_core/env";
 
 function requireSupabaseConfig() {
