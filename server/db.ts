@@ -1,6 +1,6 @@
 import postgres from "postgres";
-import { createSupabaseRequestClient } from "./supabaseAuth";
-import { ENV } from "./_core/env";
+import { createSupabaseRequestClient } from "./supabaseAuth.js";
+import { ENV } from "./_core/env.js";
 
 const DEMO_LINK_PREFIX = "Demo Link:";
 

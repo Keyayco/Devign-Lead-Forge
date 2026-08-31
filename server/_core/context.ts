@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import { getUserByAuthUserId, upsertUser, type ProfileRow } from "../db";
-import { getBearerToken, getSupabaseUserFromRequest } from "../supabaseAuth";
+import { getUserByAuthUserId, upsertUser, type ProfileRow } from "../db.js";
+import { getBearerToken, getSupabaseUserFromRequest } from "../supabaseAuth.js";
 
 export type AuthenticatedUser = {
   id: string;

@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { systemRouter } from "./_core/systemRouter.js";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc.js";
 import {
   claimLead,
   createLead,
@@ -10,7 +10,7 @@ import {
   getLeadWithClaimer,
   listLeads,
   updateLead,
-} from "./db";
+} from "./db.js";
 
 const leadFields = {
   name: z.string().trim().min(1, "Name is required").max(160),

@@ -8,7 +8,7 @@ export type SupabaseUser = {
     name?: string | null;
   };
 };
-import { ENV } from "./_core/env";
+import { ENV } from "./_core/env.js";
 
 function requireSupabaseConfig() {
   if (!ENV.supabaseUrl || !ENV.supabasePublishableKey) {
