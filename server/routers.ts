@@ -14,11 +14,11 @@ import {
 
 const leadFields = {
   name: z.string().trim().min(1, "Name is required").max(160),
-  contact: z.string().trim().min(1, "Contact is required").max(160),
-  email: z.string().trim().email("Enter a valid email").max(320),
-  address: z.string().trim().min(1, "Address is required").max(1000),
-  type: z.string().trim().min(1, "Type is required").max(96),
-  demoLink: z.string().trim().url("Enter a valid demo link").max(512),
+  contact: z.string().trim().max(160).optional().or(z.literal("")),
+  email: z.string().trim().email("Enter a valid email").max(320).optional().or(z.literal("")),
+  address: z.string().trim().max(1000).optional().or(z.literal("")),
+  type: z.string().trim().max(96).optional().or(z.literal("")),
+  demoLink: z.string().trim().url("Enter a valid demo link").max(512).optional().or(z.literal("")),
 };
 
 const leadInput = z.object(leadFields);

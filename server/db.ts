@@ -82,13 +82,14 @@ function parseNotes(notes: string | null): { address: string; demoLink: string }
   return { address, demoLink };
 }
 
-function composeNotes(address: string, demoLink: string): string {
-  return [address.trim(), `${DEMO_LINK_PREFIX} ${demoLink.trim()}`]
+function composeNotes(address = "", demoLink = ""): string | null {
+  const notes = [address.trim(), demoLink.trim() ? `${DEMO_LINK_PREFIX} ${demoLink.trim()}` : ""]
     .filter(Boolean)
     .join("\n");
+  return notes || null;
 }
 
-function splitContact(contact: string): { name: string; phone: string | null } {
+function splitContact(contact = ""): { name: string; phone: string | null } {
   const [name, ...phoneParts] = contact.split("·");
   const normalizedName = name.trim();
   const phone = phoneParts.join("·").trim();
@@ -231,11 +232,11 @@ export async function getLeadWithClaimer(id: string): Promise<LeadListRow | unde
 
 export type LeadInput = {
   name: string;
-  contact: string;
-  email: string;
-  address: string;
-  type: string;
-  demoLink: string;
+  contact?: string;
+  email?: string;
+  address?: string;
+  type?: string;
+  demoLink?: string;
 };
 
 function toLeadColumns(input: LeadInput) {
@@ -245,8 +246,8 @@ function toLeadColumns(input: LeadInput) {
     company_name: input.name,
     contact_name: contact.name,
     contact_phone: contact.phone,
-    contact_email: input.email,
-    source: input.type,
+    contact_email: input.email?.trim() || null,
+    source: input.type?.trim() || null,
     notes: composeNotes(input.address, input.demoLink),
   };
 }
