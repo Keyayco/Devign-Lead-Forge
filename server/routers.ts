@@ -19,6 +19,8 @@ const leadFields = {
   address: z.string().trim().max(1000).optional().or(z.literal("")),
   type: z.string().trim().max(96).optional().or(z.literal("")),
   demoLink: z.string().trim().url("Enter a valid demo link").max(512).optional().or(z.literal("")),
+  notes: z.string().trim().max(2000).optional().or(z.literal("")),
+  status: z.enum(["finessing", "sold", "cold", "pipeline"]).default("finessing"),
 };
 
 const leadInput = z.object(leadFields);
@@ -59,6 +61,7 @@ export const appRouter = router({
             search: z.string().optional(),
             type: z.string().optional(),
             claimStatus: z.enum(["all", "claimed", "unclaimed"]).default("all"),
+            status: z.enum(["all", "finessing", "sold", "cold", "pipeline"]).default("all"),
           })
           .optional(),
       )

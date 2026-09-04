@@ -30,6 +30,8 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+type StatusValue = "finessing" | "sold" | "cold" | "pipeline";
+
 type LeadFormState = {
   name: string;
   contact: string;
@@ -37,6 +39,8 @@ type LeadFormState = {
   address: string;
   type: string;
   demoLink: string;
+  notes: string;
+  status: StatusValue;
 };
 
 const emptyForm: LeadFormState = {
@@ -46,9 +50,17 @@ const emptyForm: LeadFormState = {
   address: "",
   type: "",
   demoLink: "",
+  notes: "",
+  status: "finessing",
 };
 
 const typeSuggestions = ["SaaS", "Agency", "E-commerce", "Services", "Other"];
+const statusOptions = [
+  { value: "finessing", label: "Finessing", detail: "Currently working / on standby" },
+  { value: "sold", label: "Sold", detail: "Closed successfully" },
+  { value: "cold", label: "Cold", detail: "No response / not interested" },
+  { value: "pipeline", label: "Pipeline customer", detail: "Returning customer" },
+] as const;
 
 export default function Home() {
   return (
@@ -63,14 +75,15 @@ function LeadWorkspace() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [claimStatus, setClaimStatus] = useState<"all" | "claimed" | "unclaimed">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | StatusValue>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [form, setForm] = useState<LeadFormState>(emptyForm);
   const [deleteLeadId, setDeleteLeadId] = useState<string | null>(null);
 
   const queryInput = useMemo(
-    () => ({ search: search.trim() || undefined, type: typeFilter, claimStatus }),
-    [search, typeFilter, claimStatus],
+    () => ({ search: search.trim() || undefined, type: typeFilter, claimStatus, status: statusFilter }),
+    [search, typeFilter, claimStatus, statusFilter],
   );
   const leadsQuery = trpc.leads.list.useQuery(queryInput, {
     enabled: isAuthenticated,
@@ -141,6 +154,8 @@ function LeadWorkspace() {
       address: lead.address,
       type: lead.type,
       demoLink: lead.demoLink,
+      notes: lead.notes,
+      status: lead.status,
     });
     setFormOpen(true);
   };
@@ -221,6 +236,13 @@ function LeadWorkspace() {
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </label>
+                <label className="relative min-w-[180px]">
+                  <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as "all" | StatusValue)} className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10" aria-label="Filter by lead status">
+                    <option value="all">All lead status</option>
+                    {statusOptions.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </label>
               </div>
             </div>
 
@@ -234,6 +256,8 @@ function LeadWorkspace() {
                     <TableHeader> Address </TableHeader>
                     <TableHeader> Type </TableHeader>
                     <TableHeader> Demo Link </TableHeader>
+                    <TableHeader> Notes </TableHeader>
+                    <TableHeader> Status </TableHeader>
                     <TableHeader> Claim status </TableHeader>
                     <TableHeader><span className="sr-only">Actions</span></TableHeader>
                   </tr>
@@ -242,9 +266,9 @@ function LeadWorkspace() {
                   {leadsQuery.isLoading ? (
                     <LoadingRows />
                   ) : leadsQuery.isError ? (
-                    <tr><td colSpan={8} className="p-12 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><CircleAlert className="mb-3 h-6 w-6 text-red-500" /><p className="font-semibold text-slate-800">Couldn’t load the queue</p><p className="mt-1 text-sm text-slate-400">Refresh the page and try again.</p></div></td></tr>
+                    <tr><td colSpan={10} className="p-12 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><CircleAlert className="mb-3 h-6 w-6 text-red-500" /><p className="font-semibold text-slate-800">Couldn’t load the queue</p><p className="mt-1 text-sm text-slate-400">Refresh the page and try again.</p></div></td></tr>
                   ) : leads.length === 0 ? (
-                    <tr><td colSpan={8} className="p-14 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Search className="h-5 w-5 text-slate-400" /></div><p className="font-semibold text-slate-800">No leads match this view</p><p className="mt-1 text-sm text-slate-400">Try adjusting your filters or add a new lead to get started.</p></div></td></tr>
+                    <tr><td colSpan={10} className="p-14 text-center"><div className="mx-auto flex max-w-sm flex-col items-center"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Search className="h-5 w-5 text-slate-400" /></div><p className="font-semibold text-slate-800">No leads match this view</p><p className="mt-1 text-sm text-slate-400">Try adjusting your filters or add a new lead to get started.</p></div></td></tr>
                   ) : (
                     leads.map(lead => {
                       const isMine = lead.claimedByUserId === user?.id;
@@ -258,6 +282,8 @@ function LeadWorkspace() {
                           <td className="max-w-[230px] truncate px-5 py-4 align-top text-slate-500" title={lead.address}>{lead.address}</td>
                           <td className="px-5 py-4 align-top"><Badge variant="secondary" className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{lead.type}</Badge></td>
                           <td className="px-5 py-4 align-top">{lead.demoLink ? <a href={lead.demoLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-slate-950 hover:decoration-slate-950"><Link2 className="h-3.5 w-3.5" />View demo<ArrowUpRight className="h-3 w-3" /></a> : <span className="text-slate-300">—</span>}</td>
+                          <td className="max-w-[240px] truncate px-5 py-4 align-top text-slate-500" title={lead.notes}>{lead.notes || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-5 py-4 align-top"><StatusBadge status={lead.status} /> </td>
                           <td className="px-5 py-4 align-top">
                             {isLocked ? <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${isMine ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}><LockKeyhole className="h-3.5 w-3.5" /></span><div><p className={`text-xs font-bold ${isMine ? "text-emerald-700" : "text-amber-700"}`}>{isMine ? "Claimed by you" : "Locked"}</p><p className="mt-0.5 max-w-[145px] truncate text-[11px] text-slate-400" title={claimedName}>{isMine ? "Your active lead" : claimedName}</p></div></div> : <Button onClick={() => claimMutation.mutate({ id: lead.id })} disabled={claimMutation.isPending} variant="outline" className="h-9 rounded-xl border-emerald-200 bg-emerald-50/50 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"><Check className="mr-1.5 h-3.5 w-3.5" />Claim lead</Button>}
                           </td>
@@ -286,7 +312,9 @@ function LeadWorkspace() {
               <Field label="Contact" value={form.contact} onChange={value => setForm({ ...form, contact: value })} placeholder="Jordan Lee · +1 555 0100" />
               <Field label="Email" type="email" value={form.email} onChange={value => setForm({ ...form, email: value })} placeholder="jordan@acme.com" />
               <Field label="Type" value={form.type} onChange={value => setForm({ ...form, type: value })} placeholder="SaaS" list="lead-types" />
+              <div><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor="status">Status</label><select id="status" value={form.status} onChange={event => setForm({ ...form, status: event.target.value as LeadFormState["status"] })} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-700 outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10">{statusOptions.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></div>
               <div className="sm:col-span-2"><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor="address">Address <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></label><Textarea id="address" value={form.address} onChange={event => setForm({ ...form, address: event.target.value })} placeholder="Street, city, region" className="min-h-20 resize-none rounded-xl border-slate-200 bg-slate-50/50 focus-visible:ring-slate-950 sm:min-h-24" /></div>
+              <div className="sm:col-span-2"><label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500" htmlFor="notes">Notes <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></label><Textarea id="notes" value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} placeholder="Add context, next steps, or follow-up details" className="min-h-24 resize-y rounded-xl border-slate-200 bg-slate-50/50 focus-visible:ring-slate-950" /></div>
               <div className="sm:col-span-2"><Field label="Demo Link" type="url" value={form.demoLink} onChange={value => setForm({ ...form, demoLink: value })} placeholder="https://example.com/demo" /><p className="mt-2 text-xs text-slate-400">Optional. Add a full URL when a demo is available.</p></div>
               <datalist id="lead-types">{typeSuggestions.map(type => <option key={type} value={type} />)}</datalist>
             </div>
@@ -319,6 +347,8 @@ type MobileLead = {
   address: string;
   type: string;
   demoLink: string;
+  notes: string;
+  status: StatusValue;
   claimedByUserId: string | null;
   claimedByName: string | null;
   claimedByEmail: string | null;
@@ -334,12 +364,18 @@ function MobileLeadCard({ lead, userId, onEdit, onDelete, onClaim, claimPending 
   const claimedName = lead.claimedByName || lead.claimedByEmail || "Another agent";
   return <article className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.5)]">
     <div className="flex items-start justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-600">{initials(lead.name)}</div><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-900">{lead.name}</h3><p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Lead #{String(lead.id).padStart(4, "0")}</p></div></div>
+      <div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-600">{initials(lead.name)}</div><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-900">{lead.name}</h3><p className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Lead #{String(lead.id).padStart(4, "0")}</p></div></div><StatusBadge status={lead.status} />
       <div className="flex shrink-0 items-center gap-1"><Button onClick={onEdit} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label={`Edit ${lead.name}`}><Pencil className="h-3.5 w-3.5" /></Button><Button onClick={onDelete} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`Delete ${lead.name}`}><Trash2 className="h-3.5 w-3.5" /></Button></div>
     </div>
-    <div className="mt-4 grid gap-2 text-xs text-slate-600"><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Contact</span><span className="min-w-0 break-words">{lead.contact || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Email</span><span className="min-w-0 break-all">{lead.email || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Type</span><span>{lead.type || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Address</span><span className="min-w-0 break-words">{lead.address || "—"}</span></div>{lead.demoLink && <div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Demo</span><a href={lead.demoLink} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 break-all font-semibold text-slate-700 underline underline-offset-4"><Link2 className="h-3.5 w-3.5 shrink-0" />Open demo<ArrowUpRight className="h-3 w-3 shrink-0" /></a></div>}</div>
+    <div className="mt-4 grid gap-2 text-xs text-slate-600"><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Contact</span><span className="min-w-0 break-words">{lead.contact || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Email</span><span className="min-w-0 break-all">{lead.email || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Type</span><span>{lead.type || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Address</span><span className="min-w-0 break-words">{lead.address || "—"}</span></div><div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Notes</span><span className="min-w-0 break-words">{lead.notes || "—"}</span></div>{lead.demoLink && <div className="flex gap-2"><span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Demo</span><a href={lead.demoLink} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 break-all font-semibold text-slate-700 underline underline-offset-4"><Link2 className="h-3.5 w-3.5 shrink-0" />Open demo<ArrowUpRight className="h-3 w-3 shrink-0" /></a></div>}</div>
     <div className="mt-4 border-t border-slate-100 pt-3">{isLocked ? <div className={`flex items-center gap-2 text-xs font-bold ${isMine ? "text-emerald-700" : "text-amber-700"}`}><LockKeyhole className="h-3.5 w-3.5" />{isMine ? "Claimed by you" : `Locked to ${claimedName}`}</div> : <Button onClick={onClaim} disabled={claimPending} variant="outline" className="h-9 w-full rounded-xl border-emerald-200 bg-emerald-50/50 text-xs font-bold text-emerald-700 hover:bg-emerald-100"><Check className="mr-1.5 h-3.5 w-3.5" />Claim lead</Button>}</div>
   </article>;
+}
+
+function StatusBadge({ status }: { status: "finessing" | "sold" | "cold" | "pipeline" }) {
+  const option = statusOptions.find(item => item.value === status) ?? statusOptions[0];
+  const tones = { finessing: "bg-blue-50 text-blue-700 ring-blue-100", sold: "bg-emerald-50 text-emerald-700 ring-emerald-100", cold: "bg-slate-100 text-slate-600 ring-slate-200", pipeline: "bg-violet-50 text-violet-700 ring-violet-100" };
+  return <Badge variant="secondary" className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ring-1 ring-inset ${tones[status]}`} title={option.detail}>{option.label}</Badge>;
 }
 
 function TableHeader({ children }: { children: React.ReactNode }) {
@@ -347,7 +383,7 @@ function TableHeader({ children }: { children: React.ReactNode }) {
 }
 
 function LoadingRows() {
-  return <>{[1, 2, 3, 4].map(row => <tr key={row} className="border-b border-slate-100"><td colSpan={8} className="px-5 py-4"><div className="h-10 animate-pulse rounded-xl bg-slate-100" /></td></tr>)}</>;
+  return <>{[1, 2, 3, 4].map(row => <tr key={row} className="border-b border-slate-100"><td colSpan={10} className="px-5 py-4"><div className="h-10 animate-pulse rounded-xl bg-slate-100" /></td></tr>)}</>;
 }
 
 function Field({ label, value, onChange, placeholder, type = "text", required, list }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string; required?: boolean; list?: string }) {

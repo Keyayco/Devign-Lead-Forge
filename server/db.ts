@@ -3,6 +3,9 @@ import { createSupabaseRequestClient } from "./supabaseAuth.js";
 import { ENV } from "./_core/env.js";
 
 const DEMO_LINK_PREFIX = "Demo Link:";
+const NOTES_PREFIX = "Notes:";
+export const LEAD_STATUSES = ["finessing", "sold", "cold", "pipeline"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
 export type ProfileRow = {
   id: string;
@@ -38,6 +41,8 @@ export type LeadListRow = {
   address: string;
   type: string;
   demoLink: string;
+  notes: string;
+  status: LeadStatus;
   claimedByUserId: string | null;
   claimedAt: Date | null;
   createdAt: Date | null;
@@ -65,25 +70,21 @@ function databaseError(operation: string, error: { message?: string } | null | u
   return new Error(`Supabase ${operation} failed: ${error?.message ?? "unknown database error"}`);
 }
 
-function parseNotes(notes: string | null): { address: string; demoLink: string } {
-  if (!notes) return { address: "", demoLink: "" };
+function parseNotes(notes: string | null): { address: string; demoLink: string; notes: string } {
+  if (!notes) return { address: "", demoLink: "", notes: "" };
 
   const lines = notes.split("\n");
   const demoLineIndex = lines.findIndex(line => line.trim().startsWith(DEMO_LINK_PREFIX));
-  const demoLink =
-    demoLineIndex >= 0
-      ? lines[demoLineIndex].trim().slice(DEMO_LINK_PREFIX.length).trim()
-      : "";
-  const address = lines
-    .filter((_, index) => index !== demoLineIndex)
-    .join("\n")
-    .trim();
+  const notesLineIndex = lines.findIndex(line => line.trim().startsWith(NOTES_PREFIX));
+  const demoLink = demoLineIndex >= 0 ? lines[demoLineIndex].trim().slice(DEMO_LINK_PREFIX.length).trim() : "";
+  const internalNotes = notesLineIndex >= 0 ? lines[notesLineIndex].trim().slice(NOTES_PREFIX.length).trim() : "";
+  const address = lines.filter((_, index) => index !== demoLineIndex && index !== notesLineIndex).join("\n").trim();
 
-  return { address, demoLink };
+  return { address, demoLink, notes: internalNotes };
 }
 
-function composeNotes(address = "", demoLink = ""): string | null {
-  const notes = [address.trim(), demoLink.trim() ? `${DEMO_LINK_PREFIX} ${demoLink.trim()}` : ""]
+function composeNotes(address = "", demoLink = "", internalNotes = ""): string | null {
+  const notes = [address.trim(), internalNotes.trim() ? `${NOTES_PREFIX} ${internalNotes.trim()}` : "", demoLink.trim() ? `${DEMO_LINK_PREFIX} ${demoLink.trim()}` : ""]
     .filter(Boolean)
     .join("\n");
   return notes || null;
@@ -129,6 +130,8 @@ function toLeadListRow(row: DbLeadRow, profiles: Map<string, ProfileRow>): LeadL
     address: parsedNotes.address,
     type: row.source ?? "",
     demoLink: parsedNotes.demoLink,
+    notes: parsedNotes.notes,
+    status: row.status === "sold" || row.status === "cold" || row.status === "pipeline" ? row.status : "finessing",
     claimedByUserId: row.claimed_by,
     claimedAt: toDate(row.claimed_at),
     createdAt: toDate(row.created_at),
@@ -191,6 +194,7 @@ export async function listLeads(filters?: {
   search?: string;
   type?: string;
   claimStatus?: "all" | "claimed" | "unclaimed";
+  status?: LeadStatus | "all";
 }): Promise<LeadListRow[]> {
   const sql = getSql();
   let query = sql<DbLeadRow[]>`select * from public.leads where true`;
@@ -205,6 +209,10 @@ export async function listLeads(filters?: {
   }
   if (filters?.claimStatus === "unclaimed") {
     query = sql<DbLeadRow[]>`${query} and claimed_by is null`;
+  }
+  if (filters?.status && filters.status !== "all") {
+    const databaseStatus = filters.status === "finessing" ? ["finessing", "new"] : [filters.status];
+    query = sql<DbLeadRow[]>`${query} and status = any(${sql.array(databaseStatus)})`;
   }
   query = sql<DbLeadRow[]>`${query} order by updated_at desc nulls last`;
 
@@ -237,6 +245,8 @@ export type LeadInput = {
   address?: string;
   type?: string;
   demoLink?: string;
+  notes?: string;
+  status?: LeadStatus;
 };
 
 function toLeadColumns(input: LeadInput) {
@@ -248,7 +258,8 @@ function toLeadColumns(input: LeadInput) {
     contact_phone: contact.phone,
     contact_email: input.email?.trim() || null,
     source: input.type?.trim() || null,
-    notes: composeNotes(input.address, input.demoLink),
+    status: input.status || "finessing",
+    notes: composeNotes(input.address, input.demoLink, input.notes),
   };
 }
 
@@ -258,10 +269,10 @@ export async function createLead(createdById: string, input: LeadInput): Promise
   try {
     const rows = await sql<DbLeadRow[]>`
       insert into public.leads
-        (title, company_name, contact_name, contact_phone, contact_email, source, notes, created_by_id)
+        (title, company_name, contact_name, contact_phone, contact_email, source, status, notes, created_by_id)
       values
         (${columns.title}, ${columns.company_name}, ${columns.contact_name}, ${columns.contact_phone},
-         ${columns.contact_email}, ${columns.source}, ${columns.notes}, ${createdById}::uuid)
+         ${columns.contact_email}, ${columns.source}, ${columns.status}, ${columns.notes}, ${createdById}::uuid)
       returning *
     `;
     if (!rows[0]) throw new Error("lead creation returned no row");
@@ -283,6 +294,7 @@ export async function updateLead(id: string, input: LeadInput): Promise<LeadList
         contact_phone = ${columns.contact_phone},
         contact_email = ${columns.contact_email},
         source = ${columns.source},
+        status = ${columns.status},
         notes = ${columns.notes},
         updated_at = now()
       where id = ${id}::uuid
