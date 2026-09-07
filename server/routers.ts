@@ -101,11 +101,23 @@ export const appRouter = router({
           });
         }
 
-        const claimed = await claimLead(requireAccessToken(ctx.accessToken), input.id);
+        let claimed: boolean;
+        try {
+          claimed = await claimLead(requireAccessToken(ctx.accessToken), input.id);
+        } catch (error) {
+          if (error instanceof Error && /already claimed or does not exist/i.test(error.message)) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "This lead is no longer available. It may have been claimed by another agent, so the queue is being refreshed.",
+              cause: error,
+            });
+          }
+          throw error;
+        }
         if (!claimed) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: "This lead was claimed by another agent just now",
+            message: "This lead was claimed by another agent just now. The queue is being refreshed.",
           });
         }
         return getLeadWithClaimer(input.id);

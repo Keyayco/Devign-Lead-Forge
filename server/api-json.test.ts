@@ -48,6 +48,7 @@ const validInput = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  status: "finessing" as const,
 };
 
 const createdLead = {
@@ -58,6 +59,8 @@ const createdLead = {
   address: validInput.address,
   type: validInput.type,
   demoLink: validInput.demoLink,
+  notes: "",
+  status: "finessing" as const,
   claimedByUserId: null,
   claimedAt: null,
   createdAt: new Date(),

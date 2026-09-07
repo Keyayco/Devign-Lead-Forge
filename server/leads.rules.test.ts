@@ -44,6 +44,8 @@ const baseLead = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  notes: "",
+  status: "finessing" as const,
   claimedByUserId: null as string | null,
   claimedAt: null,
   createdAt: new Date(),
@@ -80,6 +82,7 @@ const validInput = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  status: "finessing" as const,
 };
 
 describe("lead access rules", () => {
@@ -114,6 +117,17 @@ describe("lead access rules", () => {
     expect(db.claimLead).not.toHaveBeenCalled();
   });
 
+  it("translates an atomic RPC conflict into a clear conflict response", async () => {
+    vi.mocked(db.getLeadById).mockResolvedValue(rawLead);
+    vi.mocked(db.claimLead).mockRejectedValue(new Error("Supabase atomic lead claim failed: Lead is already claimed or does not exist"));
+    const caller = appRouter.createCaller(createContext(AGENT_ONE));
+
+    await expect(caller.leads.claim({ id: LEAD_ID })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("no longer available"),
+    });
+  });
+
   it("allows an authenticated agent to claim an unclaimed lead", async () => {
     vi.mocked(db.getLeadById).mockResolvedValue(rawLead);
     vi.mocked(db.claimLead).mockResolvedValue(true);
@@ -137,7 +151,7 @@ describe("lead CRUD procedure paths", () => {
   it("lists filtered leads for an authenticated agent", async () => {
     vi.mocked(db.listLeads).mockResolvedValue([baseLead]);
     const caller = appRouter.createCaller(createContext());
-    const filters = { search: "Northstar", type: "all", claimStatus: "all" as const };
+    const filters = { search: "Northstar", type: "all", claimStatus: "all" as const, status: "all" as const };
 
     const result = await caller.leads.list(filters);
 
