@@ -35,7 +35,25 @@ describe("Supabase Auth authorization boundary", () => {
     const caller = appRouter.createCaller(emptyContext());
 
     await expect(
-      caller.leads.list({ search: undefined, type: "all", claimStatus: "all" }),
+      caller.leads.list({ search: undefined, type: "all", claimStatus: "all" })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("rejects logged-out lead edits before ownership or database access", async () => {
+    const caller = appRouter.createCaller(emptyContext());
+
+    await expect(
+      caller.leads.update({
+        id: "00000000-0000-0000-0000-000000000123",
+        name: "Northstar Labs",
+        contact: "",
+        email: "",
+        address: "",
+        type: "",
+        demoLink: "",
+        notes: "",
+        status: "finessing",
+      })
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
@@ -62,7 +80,7 @@ describe("Supabase Auth authorization boundary", () => {
     });
 
     expect(db.getUserByAuthUserId).toHaveBeenCalledWith(
-      "00000000-0000-0000-0000-000000000123",
+      "00000000-0000-0000-0000-000000000123"
     );
     expect(db.upsertUser).not.toHaveBeenCalled();
     expect(context.accessToken).toBe("test-access-token");

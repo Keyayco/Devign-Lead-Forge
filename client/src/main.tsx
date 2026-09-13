@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { supabase } from "@/lib/supabase";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { getSupabaseAuthHeaders } from "@/lib/authHeaders";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
@@ -8,8 +9,12 @@ import App from "./App";
 import { AuthProvider } from "./_core/hooks/useAuth";
 import "./index.css";
 
-const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT as string | undefined;
-const analyticsWebsiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID as string | undefined;
+const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT as
+  | string
+  | undefined;
+const analyticsWebsiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID as
+  | string
+  | undefined;
 
 if (analyticsEndpoint && analyticsWebsiteId) {
   const analyticsScript = document.createElement("script");
@@ -44,15 +49,7 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      async headers() {
-        if (!supabase) return {};
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        return session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {};
-      },
+      headers: () => getSupabaseAuthHeaders(supabase),
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
@@ -70,5 +67,5 @@ createRoot(document.getElementById("root")!).render(
         <App />
       </AuthProvider>
     </QueryClientProvider>
-  </trpc.Provider>,
+  </trpc.Provider>
 );
