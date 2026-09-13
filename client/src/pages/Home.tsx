@@ -31,6 +31,7 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
+  CircleDollarSign,
   Filter,
   Link2,
   LockKeyhole,
@@ -42,6 +43,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  Workflow,
   UserRound,
   Users,
   X,
@@ -172,6 +174,8 @@ function LeadWorkspace() {
       claimed,
       unclaimed: leads.length - claimed,
       mine,
+      pipeline: leads.filter(lead => lead.status === "pipeline").length,
+      sold: leads.filter(lead => lead.status === "sold").length,
     };
   }, [leads, user?.id]);
   const types = useMemo(() => {
@@ -242,7 +246,7 @@ function LeadWorkspace() {
         </header>
 
         <section
-          className="mb-5 grid grid-cols-2 gap-2 sm:mb-7 sm:gap-3 xl:grid-cols-4"
+          className="mb-5 grid grid-cols-2 gap-2 sm:mb-7 sm:gap-3 xl:grid-cols-6"
           aria-label="Lead summary"
         >
           <StatCard
@@ -272,6 +276,20 @@ function LeadWorkspace() {
             detail="your active queue"
             icon={<UserRound className="h-4 w-4" />}
             tone="green"
+          />
+          <StatCard
+            label="Pipeline"
+            value={stats.pipeline}
+            detail="returning customers"
+            icon={<Workflow className="h-4 w-4" />}
+            tone="violet"
+          />
+          <StatCard
+            label="Sold"
+            value={stats.sold}
+            detail="closed successfully"
+            icon={<CircleDollarSign className="h-4 w-4" />}
+            tone="emerald"
           />
         </section>
 
@@ -969,19 +987,23 @@ function StatCard({
   value: number;
   detail: string;
   icon: React.ReactNode;
-  tone: "dark" | "warm" | "blue" | "green";
+  tone: "dark" | "warm" | "blue" | "green" | "violet" | "emerald";
 }) {
   const tones = {
     dark: "bg-slate-950 text-white",
     warm: "bg-[#fffaf2] text-slate-900 border-amber-100",
     blue: "bg-[#f5f8ff] text-slate-900 border-blue-100",
     green: "bg-[#f2fbf6] text-slate-900 border-emerald-100",
+    violet: "bg-[#faf7ff] text-slate-900 border-violet-100",
+    emerald: "bg-[#f2fbf6] text-slate-900 border-emerald-100",
   };
   const iconTones = {
     dark: "bg-white/10 text-slate-200",
     warm: "bg-amber-100 text-amber-700",
     blue: "bg-blue-100 text-blue-700",
     green: "bg-emerald-100 text-emerald-700",
+    violet: "bg-violet-100 text-violet-700",
+    emerald: "bg-emerald-100 text-emerald-700",
   };
   return (
     <div
