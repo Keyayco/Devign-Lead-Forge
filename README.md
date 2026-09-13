@@ -235,6 +235,7 @@ Set the following variables in Vercel for every environment that will be used. P
 | `SUPABASE_URL`                  | Recommended | Server-only | Explicit server-side Supabase URL; falls back to the Vite URL.    |
 | `SUPABASE_PUBLISHABLE_KEY`      | Recommended | Server-only | Explicit server-side publishable key; falls back to the Vite key. |
 | `VITE_APP_TITLE`                |    Optional | Public      | Browser title and application branding.                           |
+| `VITE_CLIENT_PORTAL_URL`        |    Optional | Public      | External Devign Client Portal URL shown as a separate-app link.   |
 | `VITE_ANALYTICS_ENDPOINT`       |    Optional | Public      | Umami analytics endpoint.                                         |
 | `VITE_ANALYTICS_WEBSITE_ID`     |    Optional | Public      | Umami website identifier.                                         |
 
@@ -363,6 +364,10 @@ A claim conflict means the requested row was already claimed or no longer exists
 ### Queue fails to load
 
 Confirm the browser session is active, the tRPC request contains a bearer token, the API function is resolving under `/api/trpc`, and the server-only database variable is present in the deployed environment. Check Vercel runtime logs for connection, module-resolution, or authorization errors.
+
+## Architecture document
+
+The actual runtime architecture, lifecycle map, security boundaries, Lead Brief behavior, ownership model, optional analytics, deployment topology, Client Portal boundary, and deliberate non-goals are documented in [`docs/architecture.md`](docs/architecture.md).
 
 ## Design and engineering decisions
 

@@ -21,19 +21,34 @@ import {
 } from "@/components/ui/sidebar";
 import { AuthPanel } from "./AuthPanel";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, ShieldCheck } from "lucide-react";
+import {
+  ExternalLink,
+  LayoutDashboard,
+  LogOut,
+  PanelLeft,
+  ShieldCheck,
+} from "lucide-react";
 import * as React from "react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 
-const menuItems = [{ icon: LayoutDashboard, label: "Leads workspace", path: "/" }];
+const menuItems = [
+  { icon: LayoutDashboard, label: "Leads workspace", path: "/" },
+];
+const clientPortalUrl = import.meta.env.VITE_CLIENT_PORTAL_URL as
+  | string
+  | undefined;
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 264;
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 400;
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
@@ -49,8 +64,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (authStatus === "unauthenticated") return <AuthPanel />;
 
   return (
-    <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>{children}</DashboardLayoutContent>
+    <SidebarProvider
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
+      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+        {children}
+      </DashboardLayoutContent>
     </SidebarProvider>
   );
 }
@@ -80,7 +99,8 @@ function DashboardLayoutContent({
       if (!isResizing) return;
       const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
       const nextWidth = event.clientX - sidebarLeft;
-      if (nextWidth >= MIN_WIDTH && nextWidth <= MAX_WIDTH) setSidebarWidth(nextWidth);
+      if (nextWidth >= MIN_WIDTH && nextWidth <= MAX_WIDTH)
+        setSidebarWidth(nextWidth);
     };
     const handleMouseUp = () => setIsResizing(false);
 
@@ -101,7 +121,11 @@ function DashboardLayoutContent({
   return (
     <>
       <div ref={sidebarRef} className="relative">
-        <Sidebar collapsible="icon" className="border-r border-slate-200 bg-[#fbfcfd]" disableTransition={isResizing}>
+        <Sidebar
+          collapsible="icon"
+          className="border-r border-slate-200 bg-[#fbfcfd]"
+          disableTransition={isResizing}
+        >
           <SidebarHeader className="h-[5.25rem] justify-center border-b border-slate-100 px-4">
             <div className="flex items-center gap-3">
               <button
@@ -113,15 +137,23 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed && (
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold tracking-tight text-slate-950">Devign Lead Forge</p>
-                  <p className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Agent workspace</p>
+                  <p className="truncate text-sm font-bold tracking-tight text-slate-950">
+                    Devign Lead Forge
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                    Agent workspace
+                  </p>
                 </div>
               )}
             </div>
           </SidebarHeader>
 
           <SidebarContent className="px-3 py-5">
-            {!isCollapsed && <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Workspace</p>}
+            {!isCollapsed && (
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                Workspace
+              </p>
+            )}
             <SidebarMenu>
               {menuItems.map(item => {
                 const isActive = location === item.path;
@@ -140,6 +172,25 @@ function DashboardLayoutContent({
                 );
               })}
             </SidebarMenu>
+            {clientPortalUrl && (
+              <a
+                href={clientPortalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={`mt-2 flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 ${isCollapsed ? "justify-center" : ""}`}
+                aria-label="Open Client Portal"
+              >
+                <ExternalLink className="h-4 w-4" />
+                {!isCollapsed && (
+                  <>
+                    <span>Client Portal</span>
+                    <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">
+                      ↗
+                    </span>
+                  </>
+                )}
+              </a>
+            )}
 
             {!isCollapsed && (
               <div className="mt-8 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
@@ -147,7 +198,9 @@ function DashboardLayoutContent({
                   <ShieldCheck className="h-4 w-4" />
                   <span className="text-xs font-bold">Secure team access</span>
                 </div>
-                <p className="mt-2 text-xs leading-5 text-emerald-800/70">Every claim is tied to a verified agent identity.</p>
+                <p className="mt-2 text-xs leading-5 text-emerald-800/70">
+                  Every claim is tied to a verified agent identity.
+                </p>
               </div>
             )}
           </SidebarContent>
@@ -157,16 +210,25 @@ function DashboardLayoutContent({
               <DropdownMenuTrigger asChild>
                 <button className="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 group-data-[collapsible=icon]:justify-center">
                   <Avatar className="h-9 w-9 shrink-0 border border-slate-200 bg-slate-100">
-                    <AvatarFallback className="bg-slate-100 text-xs font-bold text-slate-700">{user?.name?.charAt(0).toUpperCase() || "A"}</AvatarFallback>
+                    <AvatarFallback className="bg-slate-100 text-xs font-bold text-slate-700">
+                      {user?.name?.charAt(0).toUpperCase() || "A"}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                    <p className="truncate text-sm font-semibold leading-none text-slate-800">{user?.name || "Agent"}</p>
-                    <p className="mt-1.5 truncate text-xs text-slate-400">{user?.email || "Signed in agent"}</p>
+                    <p className="truncate text-sm font-semibold leading-none text-slate-800">
+                      {user?.name || "Agent"}
+                    </p>
+                    <p className="mt-1.5 truncate text-xs text-slate-400">
+                      {user?.email || "Signed in agent"}
+                    </p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                <DropdownMenuItem onClick={logout} className="cursor-pointer rounded-lg text-red-600 focus:text-red-600">
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="cursor-pointer rounded-lg text-red-600 focus:text-red-600"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>
@@ -184,7 +246,9 @@ function DashboardLayoutContent({
         {isMobile && (
           <div className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-[#f6f7f9]/95 px-4 backdrop-blur">
             <SidebarTrigger className="h-9 w-9 rounded-xl border border-slate-200 bg-white" />
-            <span className="text-sm font-semibold text-slate-800">{activeMenuItem?.label ?? "Workspace"}</span>
+            <span className="text-sm font-semibold text-slate-800">
+              {activeMenuItem?.label ?? "Workspace"}
+            </span>
           </div>
         )}
         <main className="min-h-screen flex-1">{children}</main>
