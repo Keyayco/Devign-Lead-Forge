@@ -104,7 +104,8 @@ export default function Home() {
 }
 
 function LeadWorkspace() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, supabaseUser, isAuthenticated } = useAuth();
+  const activeUserId = user?.id ?? supabaseUser?.id;
   const online = useOnlineStatus();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -200,7 +201,7 @@ function LeadWorkspace() {
     [utils.leads.list]
   );
   const offline = useOfflineLeads({
-    userId: user?.id,
+    userId: activeUserId,
     online,
     serverLeads,
     createOnline,
@@ -247,7 +248,9 @@ function LeadWorkspace() {
   ]);
   const stats = useMemo(() => {
     const claimed = leads.filter(lead => lead.claimedByUserId !== null).length;
-    const mine = leads.filter(lead => lead.claimedByUserId === user?.id).length;
+    const mine = leads.filter(
+      lead => lead.claimedByUserId === activeUserId
+    ).length;
     return {
       total: leads.length,
       claimed,
@@ -256,7 +259,7 @@ function LeadWorkspace() {
       pipeline: leads.filter(lead => lead.status === "pipeline").length,
       sold: leads.filter(lead => lead.status === "sold").length,
     };
-  }, [leads, user?.id]);
+  }, [activeUserId, leads]);
   const types = useMemo(() => {
     const values = new Set(leads.map(lead => lead.type));
     return Array.from(
@@ -758,7 +761,7 @@ function LeadWorkspace() {
                   <MobileLeadCard
                     key={lead.id}
                     lead={lead}
-                    userId={user?.id}
+                    userId={activeUserId}
                     onOpen={() => setDetailLeadId(lead.id)}
                     onEdit={() => openEdit(lead)}
                     onDelete={() => setDeleteLeadId(lead.id)}
