@@ -135,6 +135,7 @@ The main tRPC router is defined in `server/routers.ts`.
 | Procedure      | Type     | Authentication             | Purpose                                                                |
 | -------------- | -------- | -------------------------- | ---------------------------------------------------------------------- |
 | `auth.me`      | Query    | Public                     | Returns the authenticated user context when available.                 |
+| `leads.get`    | Query    | Protected                  | Reads one lead for the Lead Brief and offline conflict checks.         |
 | `leads.list`   | Query    | Protected                  | Lists leads using search, Type, claim status, and lead status filters. |
 | `leads.create` | Mutation | Protected                  | Creates a lead using the verified user as `created_by_id`.             |
 | `leads.update` | Mutation | Protected                  | Updates an accessible lead, including status and notes.                |
@@ -367,7 +368,7 @@ Confirm the browser session is active, the tRPC request contains a bearer token,
 
 ## Architecture document
 
-The actual runtime architecture, lifecycle map, security boundaries, Lead Brief behavior, ownership model, optional analytics, deployment topology, Client Portal boundary, and deliberate non-goals are documented in [`docs/architecture.md`](docs/architecture.md).
+The actual runtime architecture, lifecycle map, security boundaries, Lead Brief behavior, ownership model, optional analytics, deployment topology, Client Portal boundary, and deliberate non-goals are documented in [`docs/architecture.md`](docs/architecture.md). The schema-preserving offline cache, IndexedDB outbox, PWA shell boundary, synchronization states, and conflict behavior are documented in [`docs/offline-first.md`](docs/offline-first.md).
 
 ## Design and engineering decisions
 

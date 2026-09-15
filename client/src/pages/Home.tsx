@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import type { OfflineLead } from "@/lib/offlineDb";
+import { useOfflineLeads, useOnlineStatus } from "@/lib/useOfflineLeads";
 import {
   ArrowUpRight,
   CalendarClock,
@@ -32,6 +34,8 @@ import {
   CircleAlert,
   CircleCheck,
   CircleDollarSign,
+  Cloud,
+  CloudOff,
   Filter,
   Link2,
   LockKeyhole,
@@ -48,7 +52,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 type StatusValue = "finessing" | "sold" | "cold" | "pipeline";
@@ -101,6 +105,7 @@ export default function Home() {
 
 function LeadWorkspace() {
   const { user, isAuthenticated } = useAuth();
+  const online = useOnlineStatus();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [claimStatus, setClaimStatus] = useState<
@@ -165,7 +170,81 @@ function LeadWorkspace() {
     onError: error => toast.error(error.message),
   });
 
-  const leads = leadsQuery.data ?? [];
+  const serverLeads = useMemo(
+    () => (leadsQuery.data ?? []).map(toOfflineLead),
+    [leadsQuery.data]
+  );
+  const createOnline = useCallback(
+    async (input: LeadFormState) => {
+      const created = await createMutation.mutateAsync(input);
+      return created ? toOfflineLead(created) : created;
+    },
+    [createMutation.mutateAsync]
+  );
+  const updateOnline = useCallback(
+    async (input: { id: string } & LeadFormState) => {
+      const updated = await updateMutation.mutateAsync(input);
+      return updated ? toOfflineLead(updated) : updated;
+    },
+    [updateMutation.mutateAsync]
+  );
+  const getOnline = useCallback(
+    async (input: { id: string }) => {
+      const current = await utils.leads.get.fetch(input);
+      return current ? toOfflineLead(current) : current;
+    },
+    [utils.leads.get]
+  );
+  const invalidateLeads = useCallback(
+    () => utils.leads.list.invalidate(),
+    [utils.leads.list]
+  );
+  const offline = useOfflineLeads({
+    userId: user?.id,
+    online,
+    serverLeads,
+    createOnline,
+    updateOnline,
+    getOnline,
+    onServerDataInvalidated: invalidateLeads,
+  });
+  const leads = useMemo(() => {
+    const source =
+      online && leadsQuery.data ? leadsQuery.data : offline.cachedLeads;
+    const normalizedSearch = search.trim().toLowerCase();
+    return source.filter(lead => {
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          lead.name,
+          lead.contact,
+          lead.email,
+          lead.address,
+          lead.type,
+          lead.notes,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedSearch);
+      const matchesType = typeFilter === "all" || lead.type === typeFilter;
+      const matchesClaim =
+        claimStatus === "all" ||
+        (claimStatus === "claimed"
+          ? lead.claimedByUserId !== null
+          : lead.claimedByUserId === null);
+      const matchesStatus =
+        statusFilter === "all" || lead.status === statusFilter;
+      return matchesSearch && matchesType && matchesClaim && matchesStatus;
+    });
+  }, [
+    claimStatus,
+    offline.cachedLeads,
+    online,
+    leadsQuery.data,
+    search,
+    statusFilter,
+    typeFilter,
+  ]);
   const stats = useMemo(() => {
     const claimed = leads.filter(lead => lead.claimedByUserId !== null).length;
     const mine = leads.filter(lead => lead.claimedByUserId === user?.id).length;
@@ -206,16 +285,38 @@ function LeadWorkspace() {
     setFormOpen(true);
   };
 
-  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (editingLeadId) {
-      updateMutation.mutate({ id: editingLeadId, ...form });
-    } else {
-      createMutation.mutate(form);
+    if (!online) {
+      try {
+        if (editingLeadId) {
+          const existing = leads.find(lead => lead.id === editingLeadId);
+          if (!existing)
+            throw new Error("This cached lead is no longer available");
+          await offline.enqueueUpdate(toOfflineLead(existing), form);
+          toast.success("Saved on this device — will sync when you reconnect");
+        } else {
+          await offline.enqueueCreate(form);
+          toast.success("Lead saved offline — will sync when you reconnect");
+        }
+        setFormOpen(false);
+        setEditingLeadId(null);
+        setForm(emptyForm);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Unable to save offline"
+        );
+      }
+      return;
     }
+    if (editingLeadId) updateMutation.mutate({ id: editingLeadId, ...form });
+    else createMutation.mutate(form);
   };
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    offline.syncState === "syncing";
   const deleteTarget = leads.find(lead => lead.id === deleteLeadId);
   const detailLead = leads.find(lead => lead.id === detailLeadId);
 
@@ -224,9 +325,18 @@ function LeadWorkspace() {
       <div className="mx-auto max-w-[1500px]">
         <header className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:gap-5 lg:flex-row lg:items-end">
           <div>
-            <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
-              Live workspace
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+              <span
+                className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" : "bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.14)]"}`}
+              />
+              {online ? "Live workspace" : "Offline workspace"}
+              <SyncIndicator
+                online={online}
+                pendingCount={offline.pendingCount}
+                state={offline.syncState}
+                error={offline.syncError}
+                onSync={() => void offline.syncPending()}
+              />
             </div>
             <h1 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-4xl">
               Leads, in motion.
@@ -419,7 +529,7 @@ function LeadWorkspace() {
                 <tbody>
                   {leadsQuery.isLoading ? (
                     <LoadingRows />
-                  ) : leadsQuery.isError ? (
+                  ) : leadsQuery.isError && leads.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="p-12 text-center">
                         <div className="mx-auto flex max-w-sm flex-col items-center">
@@ -552,9 +662,15 @@ function LeadWorkspace() {
                               </div>
                             ) : (
                               <Button
-                                onClick={() =>
-                                  claimMutation.mutate({ id: lead.id })
-                                }
+                                onClick={() => {
+                                  if (!online) {
+                                    toast.error(
+                                      "You're offline. Reconnect to claim this lead."
+                                    );
+                                    return;
+                                  }
+                                  claimMutation.mutate({ id: lead.id });
+                                }}
                                 disabled={claimMutation.isPending}
                                 variant="outline"
                                 className="h-9 rounded-xl border-emerald-200 bg-emerald-50/50 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
@@ -617,7 +733,7 @@ function LeadWorkspace() {
             <div className="space-y-3 p-4 sm:hidden">
               {leadsQuery.isLoading ? (
                 <LoadingCards />
-              ) : leadsQuery.isError ? (
+              ) : leadsQuery.isError && leads.length === 0 ? (
                 <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
                   <CircleAlert className="mx-auto mb-2 h-5 w-5 text-red-500" />
                   <p className="text-sm font-semibold text-red-800">
@@ -646,7 +762,15 @@ function LeadWorkspace() {
                     onOpen={() => setDetailLeadId(lead.id)}
                     onEdit={() => openEdit(lead)}
                     onDelete={() => setDeleteLeadId(lead.id)}
-                    onClaim={() => claimMutation.mutate({ id: lead.id })}
+                    onClaim={() => {
+                      if (!online) {
+                        toast.error(
+                          "You're offline. Reconnect to claim this lead."
+                        );
+                        return;
+                      }
+                      claimMutation.mutate({ id: lead.id });
+                    }}
                     claimPending={claimMutation.isPending}
                   />
                 ))
@@ -1218,12 +1342,107 @@ function BriefItem({
   );
 }
 
-function formatDate(value: Date | null | undefined) {
+function formatDate(value: Date | string | null | undefined) {
   if (!value) return "Not recorded";
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(value);
+  }).format(typeof value === "string" ? new Date(value) : value);
+}
+
+function SyncIndicator({
+  online,
+  pendingCount,
+  state,
+  error,
+  onSync,
+}: {
+  online: boolean;
+  pendingCount: number;
+  state: "idle" | "syncing" | "complete" | "error";
+  error: string | null;
+  onSync: () => void;
+}) {
+  const label = !online
+    ? pendingCount > 0
+      ? `${pendingCount} change${pendingCount === 1 ? "" : "s"} pending`
+      : "Offline"
+    : state === "syncing"
+      ? "Syncing..."
+      : state === "error"
+        ? "Sync error"
+        : state === "complete"
+          ? "Sync complete"
+          : "Online";
+  const Icon = !online
+    ? CloudOff
+    : state === "syncing"
+      ? Cloud
+      : state === "error"
+        ? CloudOff
+        : Cloud;
+  return (
+    <button
+      type="button"
+      onClick={onSync}
+      disabled={!online || state === "syncing" || pendingCount === 0}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.08em] transition-colors ${
+        !online
+          ? "bg-amber-50 text-amber-700"
+          : state === "error"
+            ? "bg-red-50 text-red-700"
+            : "bg-emerald-50 text-emerald-700"
+      } disabled:cursor-default`}
+      title={error ?? "Click to synchronize pending changes"}
+    >
+      <Icon
+        className={`h-3 w-3 ${state === "syncing" ? "animate-pulse" : ""}`}
+      />
+      {label}
+    </button>
+  );
+}
+
+function toOfflineLead(lead: {
+  id: string;
+  name: string;
+  contact: string;
+  email: string;
+  address: string;
+  type: string;
+  demoLink: string;
+  notes: string;
+  status: StatusValue;
+  claimedByUserId: string | null;
+  claimedByName: string | null;
+  claimedByEmail: string | null;
+  createdAt: Date | string | null;
+  updatedAt: Date | string | null;
+}): OfflineLead {
+  return {
+    id: lead.id,
+    name: lead.name,
+    contact: lead.contact,
+    email: lead.email,
+    address: lead.address,
+    type: lead.type,
+    demoLink: lead.demoLink,
+    notes: lead.notes,
+    status: lead.status,
+    claimedByUserId: lead.claimedByUserId,
+    claimedByName: lead.claimedByName,
+    claimedByEmail: lead.claimedByEmail,
+    createdAt: lead.createdAt
+      ? typeof lead.createdAt === "string"
+        ? lead.createdAt
+        : lead.createdAt.toISOString()
+      : null,
+    updatedAt: lead.updatedAt
+      ? typeof lead.updatedAt === "string"
+        ? lead.updatedAt
+        : lead.updatedAt.toISOString()
+      : null,
+  };
 }
 
 function StatusBadge({

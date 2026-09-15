@@ -15,12 +15,26 @@ import {
 const leadFields = {
   name: z.string().trim().min(1, "Name is required").max(160),
   contact: z.string().trim().max(160).optional().or(z.literal("")),
-  email: z.string().trim().email("Enter a valid email").max(320).optional().or(z.literal("")),
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email")
+    .max(320)
+    .optional()
+    .or(z.literal("")),
   address: z.string().trim().max(1000).optional().or(z.literal("")),
   type: z.string().trim().max(96).optional().or(z.literal("")),
-  demoLink: z.string().trim().url("Enter a valid demo link").max(512).optional().or(z.literal("")),
+  demoLink: z
+    .string()
+    .trim()
+    .url("Enter a valid demo link")
+    .max(512)
+    .optional()
+    .or(z.literal("")),
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
-  status: z.enum(["finessing", "sold", "cold", "pipeline"]).default("finessing"),
+  status: z
+    .enum(["finessing", "sold", "cold", "pipeline"])
+    .default("finessing"),
 };
 
 const leadInput = z.object(leadFields);
@@ -42,7 +56,10 @@ async function assertLeadAccess(id: string, userId: string) {
 
 function requireAccessToken(accessToken: string | null): string {
   if (!accessToken) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Supabase access token is required" });
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Supabase access token is required",
+    });
   }
   return accessToken;
 }
@@ -54,6 +71,13 @@ export const appRouter = router({
   }),
 
   leads: router({
+    get: protectedProcedure.input(leadIdInput).query(async ({ input }) => {
+      const lead = await getLeadWithClaimer(input.id);
+      if (!lead)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lead not found" });
+      return lead;
+    }),
+
     list: protectedProcedure
       .input(
         z
@@ -61,9 +85,11 @@ export const appRouter = router({
             search: z.string().optional(),
             type: z.string().optional(),
             claimStatus: z.enum(["all", "claimed", "unclaimed"]).default("all"),
-            status: z.enum(["all", "finessing", "sold", "cold", "pipeline"]).default("all"),
+            status: z
+              .enum(["all", "finessing", "sold", "cold", "pipeline"])
+              .default("all"),
           })
-          .optional(),
+          .optional()
       )
       .query(({ input }) => listLeads(input)),
 
@@ -72,7 +98,9 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => createLead(ctx.user.id, input)),
 
     update: protectedProcedure
-      .input(leadInput.extend({ id: z.string().uuid("Lead id must be a UUID") }))
+      .input(
+        leadInput.extend({ id: z.string().uuid("Lead id must be a UUID") })
+      )
       .mutation(async ({ input, ctx }) => {
         await assertLeadAccess(input.id, ctx.user.id);
         const { id, ...fields } = input;
@@ -103,12 +131,19 @@ export const appRouter = router({
 
         let claimed: boolean;
         try {
-          claimed = await claimLead(requireAccessToken(ctx.accessToken), input.id);
+          claimed = await claimLead(
+            requireAccessToken(ctx.accessToken),
+            input.id
+          );
         } catch (error) {
-          if (error instanceof Error && /already claimed or does not exist/i.test(error.message)) {
+          if (
+            error instanceof Error &&
+            /already claimed or does not exist/i.test(error.message)
+          ) {
             throw new TRPCError({
               code: "CONFLICT",
-              message: "This lead is no longer available. It may have been claimed by another agent, so the queue is being refreshed.",
+              message:
+                "This lead is no longer available. It may have been claimed by another agent, so the queue is being refreshed.",
               cause: error,
             });
           }
@@ -117,7 +152,8 @@ export const appRouter = router({
         if (!claimed) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: "This lead was claimed by another agent just now. The queue is being refreshed.",
+            message:
+              "This lead was claimed by another agent just now. The queue is being refreshed.",
           });
         }
         return getLeadWithClaimer(input.id);
