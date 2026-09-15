@@ -95,6 +95,24 @@ const statusOptions = [
   },
 ] as const;
 
+function isNetworkFailure(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof TypeError && error.message === "Failed to fetch")
+    return true;
+  if (error instanceof Error) {
+    if (
+      /failed to fetch|network error|network request failed|offline/i.test(
+        error.message
+      )
+    )
+      return true;
+    return isNetworkFailure(error.cause);
+  }
+  if (typeof error === "object" && "cause" in error)
+    return isNetworkFailure(error.cause);
+  return false;
+}
+
 export default function Home() {
   return (
     <DashboardLayout>
@@ -150,7 +168,9 @@ function LeadWorkspace() {
       setForm(emptyForm);
       void utils.leads.list.invalidate();
     },
-    onError: error => toast.error(error.message),
+    onError: error => {
+      if (!isNetworkFailure(error)) toast.error(error.message);
+    },
   });
   const claimMutation = trpc.leads.claim.useMutation({
     onSuccess: () => {
@@ -312,8 +332,35 @@ function LeadWorkspace() {
       }
       return;
     }
-    if (editingLeadId) updateMutation.mutate({ id: editingLeadId, ...form });
-    else createMutation.mutate(form);
+    try {
+      if (editingLeadId)
+        await updateMutation.mutateAsync({ id: editingLeadId, ...form });
+      else await createMutation.mutateAsync(form);
+    } catch (error) {
+      if (!isNetworkFailure(error)) return;
+
+      try {
+        if (editingLeadId) {
+          const existing = leads.find(lead => lead.id === editingLeadId);
+          if (!existing)
+            throw new Error("This cached lead is no longer available");
+          await offline.enqueueUpdate(toOfflineLead(existing), form);
+          toast.success("Saved on this device — will sync when you reconnect");
+        } else {
+          await offline.enqueueCreate(form);
+          toast.success("Lead saved offline — will sync when you reconnect");
+        }
+        setFormOpen(false);
+        setEditingLeadId(null);
+        setForm(emptyForm);
+      } catch (offlineError) {
+        toast.error(
+          offlineError instanceof Error
+            ? offlineError.message
+            : "Unable to save offline"
+        );
+      }
+    }
   };
 
   const isSaving =

@@ -206,8 +206,8 @@ export function useOfflineLeads({
   ]);
 
   useEffect(() => {
-    if (online) void syncPending();
-  }, [online, syncPending]);
+    if (online && pendingCount > 0) void syncPending();
+  }, [online, pendingCount, syncPending]);
 
   const enqueue = useCallback(
     async (
