@@ -118,7 +118,9 @@ describe("lead access rules", () => {
   });
 
   it("translates an atomic RPC conflict into a clear conflict response", async () => {
-    vi.mocked(db.getLeadById).mockResolvedValue(rawLead);
+    vi.mocked(db.getLeadById)
+      .mockResolvedValueOnce(rawLead)
+      .mockResolvedValueOnce({ ...rawLead, claimed_by: AGENT_TWO });
     vi.mocked(db.claimLead).mockRejectedValue(new Error("Supabase atomic lead claim failed: Lead is already claimed or does not exist"));
     const caller = appRouter.createCaller(createContext(AGENT_ONE));
 
@@ -142,6 +144,49 @@ describe("lead access rules", () => {
 
     expect(db.claimLead).toHaveBeenCalledWith(`token-${AGENT_ONE}`, LEAD_ID);
     expect(result?.claimedByUserId).toBe(AGENT_ONE);
+  });
+
+  it("does not call an unclaimed lead a conflict when the atomic result cannot confirm ownership", async () => {
+    vi.mocked(db.getLeadById)
+      .mockResolvedValueOnce(rawLead)
+      .mockResolvedValueOnce(rawLead);
+    vi.mocked(db.claimLead).mockResolvedValue(false);
+    const caller = appRouter.createCaller(createContext(AGENT_ONE));
+
+    await expect(caller.leads.claim({ id: LEAD_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "The atomic claim did not confirm ownership",
+    });
+  });
+
+  it("only returns a conflict after the fresh row shows another owner", async () => {
+    vi.mocked(db.getLeadById)
+      .mockResolvedValueOnce(rawLead)
+      .mockResolvedValueOnce({ ...rawLead, claimed_by: AGENT_TWO });
+    vi.mocked(db.claimLead).mockResolvedValue(false);
+    const caller = appRouter.createCaller(createContext(AGENT_ONE));
+
+    await expect(caller.leads.claim({ id: LEAD_ID })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
+
+  it("allows a second agent to claim a different unclaimed lead", async () => {
+    const secondLead = { ...rawLead, id: "88888888-8888-4888-8888-888888888888" };
+    vi.mocked(db.getLeadById).mockResolvedValue(secondLead);
+    vi.mocked(db.claimLead).mockResolvedValue(true);
+    vi.mocked(db.getLeadWithClaimer).mockResolvedValue({
+      ...baseLead,
+      id: secondLead.id,
+      claimedByUserId: AGENT_TWO,
+      claimedByName: "Agent 2",
+    });
+    const caller = appRouter.createCaller(createContext(AGENT_TWO));
+
+    const result = await caller.leads.claim({ id: secondLead.id });
+
+    expect(db.claimLead).toHaveBeenCalledWith(`token-${AGENT_TWO}`, secondLead.id);
+    expect(result?.claimedByUserId).toBe(AGENT_TWO);
   });
 });
 

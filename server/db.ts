@@ -323,6 +323,26 @@ export async function claimLead(accessToken: string, id: string): Promise<boolea
   const client = createSupabaseRequestClient(accessToken);
   const { data, error } = await client.rpc("claim_lead", { p_lead_id: id });
   if (error) throw databaseError("atomic lead claim", error);
-  const claimedRow = Array.isArray(data) ? data[0] : data;
-  return Boolean(claimedRow && (claimedRow as DbLeadRow).id === id);
+
+  // The production RPC is atomic, but deployed PostgREST versions can
+  // serialize a successful function result as an empty response or a
+  // differently-shaped single row. Never infer a conflict from that shape.
+  const returnedRows = Array.isArray(data) ? data : data ? [data] : [];
+  if (returnedRows.some(row => {
+    const candidate = row as Partial<DbLeadRow>;
+    return candidate.id === id || candidate.id === id.toString();
+  })) {
+    return true;
+  }
+
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError || !authData.user) return false;
+
+  const { data: currentLead, error: readError } = await client
+    .from("leads")
+    .select("id, claimed_by")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) throw databaseError("atomic lead claim verification", readError);
+  return currentLead?.claimed_by === authData.user.id;
 }

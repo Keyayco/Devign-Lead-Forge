@@ -140,6 +140,17 @@ export const appRouter = router({
             error instanceof Error &&
             /already claimed or does not exist/i.test(error.message)
           ) {
+            const afterAttempt = await getLeadById(input.id);
+            if (!afterAttempt) {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Lead not found after claim attempt",
+                cause: error,
+              });
+            }
+            if (!afterAttempt.claimed_by || afterAttempt.claimed_by === ctx.user.id) {
+              throw error;
+            }
             throw new TRPCError({
               code: "CONFLICT",
               message:
@@ -150,6 +161,19 @@ export const appRouter = router({
           throw error;
         }
         if (!claimed) {
+          const afterAttempt = await getLeadById(input.id);
+          if (!afterAttempt) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Lead not found after claim attempt",
+            });
+          }
+          if (!afterAttempt.claimed_by || afterAttempt.claimed_by === ctx.user.id) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "The atomic claim did not confirm ownership",
+            });
+          }
           throw new TRPCError({
             code: "CONFLICT",
             message:
