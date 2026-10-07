@@ -1,10 +1,4 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-  varchar,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 /**
  * Supabase Auth profile mirror. `id` is the authoritative auth.users UUID.
@@ -34,6 +28,8 @@ export const leads = pgTable("leads", {
   contactPhone: text("contact_phone"),
   source: text("source"),
   status: text("status").default("new"),
+  demoStatus: text("demo_status").default("none").notNull(),
+  outreachStatus: text("outreach_status").default("not_started").notNull(),
   claimedBy: uuid("claimed_by").references(() => profiles.id, {
     onDelete: "set null",
   }),

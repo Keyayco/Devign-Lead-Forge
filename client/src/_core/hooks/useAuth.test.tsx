@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, act, waitFor, render, screen } from "@testing-library/react";
+import {
+  renderHook,
+  act,
+  waitFor,
+  render,
+  screen,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { httpBatchLink } from "@trpc/client";
@@ -10,14 +16,18 @@ import superjson from "superjson";
 import { trpc } from "@/lib/trpc";
 
 let currentMockSession: any = null;
-let registeredAuthListener: ((event: string, session: any) => void) | null = null;
+let registeredAuthListener: ((event: string, session: any) => void) | null =
+  null;
 
 vi.mock("@/lib/supabase", () => {
   return {
     supabase: {
       auth: {
-        getSession: vi.fn(async () => ({ data: { session: currentMockSession }, error: null })),
-        onAuthStateChange: vi.fn((callback) => {
+        getSession: vi.fn(async () => ({
+          data: { session: currentMockSession },
+          error: null,
+        })),
+        onAuthStateChange: vi.fn(callback => {
           registeredAuthListener = callback;
           return {
             data: {
@@ -29,14 +39,23 @@ vi.mock("@/lib/supabase", () => {
         }),
         signInWithPassword: vi.fn(async ({ email }) => {
           if (email === "fail@example.com") {
-            return { data: { session: null, user: null }, error: new Error("Invalid credentials") };
+            return {
+              data: { session: null, user: null },
+              error: new Error("Invalid credentials"),
+            };
           }
           currentMockSession = {
             access_token: "mock-token-123",
             user: { id: "user-uuid-1", email },
           };
           registeredAuthListener?.("SIGNED_IN", currentMockSession);
-          return { data: { session: currentMockSession, user: currentMockSession.user }, error: null };
+          return {
+            data: {
+              session: currentMockSession,
+              user: currentMockSession.user,
+            },
+            error: null,
+          };
         }),
         signOut: vi.fn(async () => {
           currentMockSession = null;
@@ -49,16 +68,28 @@ vi.mock("@/lib/supabase", () => {
       auth: {
         signInWithPassword: async ({ email }: any) => {
           if (email === "fail@example.com") {
-            return { data: { session: null, user: null }, error: new Error("Invalid credentials") };
+            return {
+              data: { session: null, user: null },
+              error: new Error("Invalid credentials"),
+            };
           }
           currentMockSession = {
             access_token: "mock-token-123",
             user: { id: "user-uuid-1", email },
           };
           registeredAuthListener?.("SIGNED_IN", currentMockSession);
-          return { data: { session: currentMockSession, user: currentMockSession.user }, error: null };
+          return {
+            data: {
+              session: currentMockSession,
+              user: currentMockSession.user,
+            },
+            error: null,
+          };
         },
-        signUp: async () => ({ data: { session: null, user: null }, error: null }),
+        signUp: async () => ({
+          data: { session: null, user: null },
+          error: null,
+        }),
       },
     }),
     SUPABASE_AUTH_NOT_CONFIGURED: "Supabase Auth is not configured",
@@ -68,9 +99,16 @@ vi.mock("@/lib/supabase", () => {
 import { AuthProvider, useAuth } from "./useAuth";
 
 function createWrapper() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const client = trpc.createClient({
-    links: [httpBatchLink({ url: "http://localhost:3000/api/trpc", transformer: superjson })],
+    links: [
+      httpBatchLink({
+        url: "http://localhost:3000/api/trpc",
+        transformer: superjson,
+      }),
+    ],
   });
 
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -92,7 +130,9 @@ describe("useAuth comprehensive lifecycle", () => {
   });
 
   it("starts in loading state and resolves unauthenticated when no session exists", async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     expect(result.current.loading).toBe(true);
     expect(result.current.authStatus).toBe("loading");
@@ -112,7 +152,9 @@ describe("useAuth comprehensive lifecycle", () => {
       user: { id: "user-uuid-1", email: "agent@example.com" },
     };
 
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -122,13 +164,69 @@ describe("useAuth comprehensive lifecycle", () => {
     expect(result.current.authStatus).toBe("authenticated");
   });
 
+  it("restores a persisted session offline without calling auth.me", async () => {
+    currentMockSession = {
+      access_token: "offline-restored-token",
+      user: { id: "user-uuid-1", email: "agent@example.com" },
+    };
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.authStatus).toBe("authenticated");
+    });
+    expect(result.current.session?.access_token).toBe("offline-restored-token");
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+  });
+
+  it("does not enter the authenticated app offline without a persisted session", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.authStatus).toBe("unauthenticated");
+    });
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+  });
+
   it("accepts INITIAL_SESSION with a persisted session and keeps the workspace authenticated", async () => {
     currentMockSession = {
       access_token: "initial-session-token",
       user: { id: "user-uuid-1", email: "agent@example.com" },
     };
 
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -143,14 +241,19 @@ describe("useAuth comprehensive lifecycle", () => {
   });
 
   it("handles successful sign-in and updates auth state deterministically", async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
 
     await act(async () => {
-      await result.current.login({ email: "agent@example.com", password: "password123" });
+      await result.current.login({
+        email: "agent@example.com",
+        password: "password123",
+      });
     });
 
     expect(result.current.session).not.toBeNull();
@@ -159,14 +262,19 @@ describe("useAuth comprehensive lifecycle", () => {
   });
 
   it("keeps the user unauthenticated and exposes the safe Supabase error after failed sign-in", async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.authStatus).toBe("unauthenticated");
     });
 
     await expect(
-      result.current.login({ email: "fail@example.com", password: "wrong-password" }),
+      result.current.login({
+        email: "fail@example.com",
+        password: "wrong-password",
+      })
     ).rejects.toThrow("Invalid credentials");
 
     expect(result.current.authStatus).toBe("unauthenticated");
@@ -179,7 +287,9 @@ describe("useAuth comprehensive lifecycle", () => {
       user: { id: "user-uuid-1", email: "agent@example.com" },
     };
 
-    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -206,12 +316,16 @@ describe("useAuth comprehensive lifecycle", () => {
   it("suppresses protected queries and renders deterministic UI without blank state across auth transitions", async () => {
     function TestComponent() {
       const { authStatus, isAuthenticated } = useAuth();
-      const query = trpc.leads.list.useQuery(undefined, { enabled: isAuthenticated });
+      const query = trpc.leads.list.useQuery(undefined, {
+        enabled: isAuthenticated,
+      });
 
       return (
         <div>
           <span data-testid="status">{authStatus}</span>
-          <span data-testid="fetching">{query.isFetching ? "fetching" : "idle"}</span>
+          <span data-testid="fetching">
+            {query.isFetching ? "fetching" : "idle"}
+          </span>
         </div>
       );
     }
@@ -220,7 +334,7 @@ describe("useAuth comprehensive lifecycle", () => {
       <React.StrictMode>
         <TestComponent />
       </React.StrictMode>,
-      { wrapper: createWrapper() },
+      { wrapper: createWrapper() }
     );
 
     // Initial loading state should render deterministic status and suppress query fetch

@@ -1,7 +1,16 @@
 import { trpc } from "@/lib/trpc";
 import { requireSupabaseAuth, supabase } from "@/lib/supabase";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -25,7 +34,12 @@ type AuthContextValue = {
   error: Error | null;
   isAuthenticated: boolean;
   login: (credentials: PasswordCredentials) => Promise<void>;
-  signUp: (credentials: PasswordCredentials & { fullName?: string }) => Promise<{ data: { session: Session | null; user: SupabaseUser | null }; error: Error | null }>;
+  signUp: (
+    credentials: PasswordCredentials & { fullName?: string }
+  ) => Promise<{
+    data: { session: Session | null; user: SupabaseUser | null };
+    error: Error | null;
+  }>;
 
   logout: () => Promise<void>;
   refresh: () => Promise<unknown>;
@@ -42,7 +56,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const utils = trpc.useUtils();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
-  const [authError, setAuthError] = useState<Error | null>(() => (supabase ? null : new Error("Supabase Auth is not configured")));
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine
+  );
+  const [authError, setAuthError] = useState<Error | null>(() =>
+    supabase ? null : new Error("Supabase Auth is not configured")
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
@@ -65,7 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === "SIGNED_OUT" || !nextSession) {
         utils.auth.me.setData(undefined, null);
-      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+      } else if (
+        online &&
+        (event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED" ||
+          event === "INITIAL_SESSION")
+      ) {
         void utils.auth.me.invalidate();
       }
     });
@@ -86,46 +122,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [utils]);
+  }, [online, utils]);
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    enabled: Boolean(session) && !sessionLoading,
+    enabled: Boolean(session) && !sessionLoading && online,
     retry: false,
     refetchOnWindowFocus: false,
   });
 
-  const login = useCallback(async ({ email, password }: PasswordCredentials) => {
-    const client = requireSupabaseAuth(supabase);
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
-    authDiagnostic("SIGN_IN", {
-      success: !error,
-      hasSession: Boolean(data.session),
-      userId: data.user?.id ?? null,
-      error: error?.message ?? null,
-    });
-    if (error) throw error;
-    if (data.session) setSession(data.session);
-  }, []);
+  const login = useCallback(
+    async ({ email, password }: PasswordCredentials) => {
+      const client = requireSupabaseAuth(supabase);
+      const { data, error } = await client.auth.signInWithPassword({
+        email,
+        password,
+      });
+      authDiagnostic("SIGN_IN", {
+        success: !error,
+        hasSession: Boolean(data.session),
+        userId: data.user?.id ?? null,
+        error: error?.message ?? null,
+      });
+      if (error) throw error;
+      if (data.session) setSession(data.session);
+    },
+    []
+  );
 
-  const signUp = useCallback(async ({ email, password, fullName }: PasswordCredentials & { fullName?: string }) => {
-    const client = requireSupabaseAuth(supabase);
-    const result = await client.auth.signUp({
+  const signUp = useCallback(
+    async ({
       email,
       password,
-      options: {
-        data: fullName ? { full_name: fullName } : undefined,
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    authDiagnostic("SIGN_UP", {
-      success: !result.error,
-      hasSession: Boolean(result.data.session),
-      userId: result.data.user?.id ?? null,
-      error: result.error?.message ?? null,
-    });
-    if (!result.error && result.data.session) setSession(result.data.session);
-    return result;
-  }, []);
+      fullName,
+    }: PasswordCredentials & { fullName?: string }) => {
+      const client = requireSupabaseAuth(supabase);
+      const result = await client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: fullName ? { full_name: fullName } : undefined,
+          emailRedirectTo:
+            typeof window !== "undefined" ? window.location.origin : undefined,
+        },
+      });
+      authDiagnostic("SIGN_UP", {
+        success: !result.error,
+        hasSession: Boolean(result.data.session),
+        userId: result.data.user?.id ?? null,
+        error: result.error?.message ?? null,
+      });
+      if (!result.error && result.data.session) setSession(result.data.session);
+      return result;
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     if (!supabase) return;
@@ -136,14 +186,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const state = useMemo(() => {
     const user = meQuery.data ?? null;
-    const authStatus: AuthStatus = sessionLoading ? "loading" : session ? "authenticated" : "unauthenticated";
+    const authStatus: AuthStatus = sessionLoading
+      ? "loading"
+      : session
+        ? "authenticated"
+        : "unauthenticated";
     const value: AuthContextValue = {
       user,
       session,
       supabaseUser: session?.user ?? null,
       loading: sessionLoading,
       authStatus,
-      error: authError ?? (meQuery.error ? new Error(meQuery.error.message) : null),
+      error:
+        authError ?? (meQuery.error ? new Error(meQuery.error.message) : null),
       isAuthenticated: Boolean(session),
       login,
       signUp,
@@ -152,7 +207,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authUser: session?.user ?? null,
     };
     return value;
-  }, [authError, login, logout, meQuery.data, meQuery.error, meQuery.refetch, session, sessionLoading, signUp]);
+  }, [
+    authError,
+    login,
+    logout,
+    meQuery.data,
+    meQuery.error,
+    meQuery.refetch,
+    session,
+    sessionLoading,
+    signUp,
+  ]);
 
   useEffect(() => {
     authDiagnostic("AUTH_STATE", {

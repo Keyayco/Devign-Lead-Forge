@@ -3,9 +3,19 @@ import { createSupabaseRequestClient } from "./supabaseAuth.js";
 import { ENV } from "./_core/env.js";
 
 const DEMO_LINK_PREFIX = "Demo Link:";
+const ADDRESS_PREFIX = "Address:";
 const NOTES_PREFIX = "Notes:";
 export const LEAD_STATUSES = ["finessing", "sold", "cold", "pipeline"] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
+export const DEMO_STATUSES = ["none", "building", "ready", "sent"] as const;
+export type DemoStatus = (typeof DEMO_STATUSES)[number];
+export const OUTREACH_STATUSES = [
+  "not_started",
+  "contacted",
+  "responded",
+  "follow_up",
+] as const;
+export type OutreachStatus = (typeof OUTREACH_STATUSES)[number];
 
 export type ProfileRow = {
   id: string;
@@ -25,6 +35,8 @@ type DbLeadRow = {
   contact_phone: string | null;
   source: string | null;
   status: string | null;
+  demo_status: string | null;
+  outreach_status: string | null;
   claimed_by: string | null;
   claimed_at: string | null;
   notes: string | null;
@@ -43,6 +55,8 @@ export type LeadListRow = {
   demoLink: string;
   notes: string;
   status: LeadStatus;
+  demoStatus: DemoStatus;
+  outreachStatus: OutreachStatus;
   claimedByUserId: string | null;
   claimedAt: Date | null;
   createdAt: Date | null;
@@ -66,25 +80,76 @@ function getSql() {
   return sqlClient;
 }
 
-function databaseError(operation: string, error: { message?: string } | null | undefined): Error {
-  return new Error(`Supabase ${operation} failed: ${error?.message ?? "unknown database error"}`);
+function databaseError(
+  operation: string,
+  error: { message?: string } | null | undefined
+): Error {
+  return new Error(
+    `Supabase ${operation} failed: ${error?.message ?? "unknown database error"}`
+  );
 }
 
-function parseNotes(notes: string | null): { address: string; demoLink: string; notes: string } {
+export function parseLeadText(notes: string | null): {
+  address: string;
+  demoLink: string;
+  notes: string;
+} {
   if (!notes) return { address: "", demoLink: "", notes: "" };
 
   const lines = notes.split("\n");
-  const demoLineIndex = lines.findIndex(line => line.trim().startsWith(DEMO_LINK_PREFIX));
-  const notesLineIndex = lines.findIndex(line => line.trim().startsWith(NOTES_PREFIX));
-  const demoLink = demoLineIndex >= 0 ? lines[demoLineIndex].trim().slice(DEMO_LINK_PREFIX.length).trim() : "";
-  const internalNotes = notesLineIndex >= 0 ? lines[notesLineIndex].trim().slice(NOTES_PREFIX.length).trim() : "";
-  const address = lines.filter((_, index) => index !== demoLineIndex && index !== notesLineIndex).join("\n").trim();
+  const addressLineIndex = lines.findIndex(line =>
+    line.trim().startsWith(ADDRESS_PREFIX)
+  );
+  const demoLineIndex = lines.findIndex(line =>
+    line.trim().startsWith(DEMO_LINK_PREFIX)
+  );
+  const notesLineIndex = lines.findIndex(line =>
+    line.trim().startsWith(NOTES_PREFIX)
+  );
+  const demoLink =
+    demoLineIndex >= 0
+      ? lines[demoLineIndex].trim().slice(DEMO_LINK_PREFIX.length).trim()
+      : "";
+  const sectionEnd = (index: number) =>
+    [demoLineIndex, addressLineIndex, notesLineIndex]
+      .filter(candidate => candidate > index)
+      .sort((a, b) => a - b)[0] ?? lines.length;
+  const address =
+    addressLineIndex >= 0
+      ? lines[addressLineIndex].trim().slice(ADDRESS_PREFIX.length).trim()
+      : lines
+          .slice(
+            0,
+            notesLineIndex >= 0
+              ? notesLineIndex
+              : demoLineIndex >= 0
+                ? demoLineIndex
+                : lines.length
+          )
+          .join("\n")
+          .trim();
+  const internalNotes =
+    notesLineIndex >= 0
+      ? lines
+          .slice(notesLineIndex, sectionEnd(notesLineIndex))
+          .join("\n")
+          .replace(/^Notes:\s*/, "")
+          .trim()
+      : "";
 
   return { address, demoLink, notes: internalNotes };
 }
 
-function composeNotes(address = "", demoLink = "", internalNotes = ""): string | null {
-  const notes = [address.trim(), internalNotes.trim() ? `${NOTES_PREFIX} ${internalNotes.trim()}` : "", demoLink.trim() ? `${DEMO_LINK_PREFIX} ${demoLink.trim()}` : ""]
+export function composeLeadText(
+  address = "",
+  demoLink = "",
+  internalNotes = ""
+): string | null {
+  const notes = [
+    address.trim() ? `${ADDRESS_PREFIX} ${address.trim()}` : "",
+    internalNotes.trim() ? `${NOTES_PREFIX} ${internalNotes.trim()}` : "",
+    demoLink.trim() ? `${DEMO_LINK_PREFIX} ${demoLink.trim()}` : "",
+  ]
     .filter(Boolean)
     .join("\n");
   return notes || null;
@@ -97,7 +162,10 @@ function splitContact(contact = ""): { name: string; phone: string | null } {
   return { name: normalizedName, phone: phone || null };
 }
 
-function formatContact(contactName: string, contactPhone: string | null): string {
+function formatContact(
+  contactName: string,
+  contactPhone: string | null
+): string {
   return [contactName.trim(), contactPhone?.trim()].filter(Boolean).join(" · ");
 }
 
@@ -105,7 +173,9 @@ function toDate(value: string | null): Date | null {
   return value ? new Date(value) : null;
 }
 
-async function getProfilesById(ids: string[]): Promise<Map<string, ProfileRow>> {
+async function getProfilesById(
+  ids: string[]
+): Promise<Map<string, ProfileRow>> {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return new Map();
 
@@ -119,8 +189,11 @@ async function getProfilesById(ids: string[]): Promise<Map<string, ProfileRow>> 
   return new Map(rows.map(profile => [profile.id, profile]));
 }
 
-function toLeadListRow(row: DbLeadRow, profiles: Map<string, ProfileRow>): LeadListRow {
-  const parsedNotes = parseNotes(row.notes);
+function toLeadListRow(
+  row: DbLeadRow,
+  profiles: Map<string, ProfileRow>
+): LeadListRow {
+  const parsedNotes = parseLeadText(row.notes);
   const claimer = row.claimed_by ? profiles.get(row.claimed_by) : undefined;
   return {
     id: row.id,
@@ -131,7 +204,28 @@ function toLeadListRow(row: DbLeadRow, profiles: Map<string, ProfileRow>): LeadL
     type: row.source ?? "",
     demoLink: parsedNotes.demoLink,
     notes: parsedNotes.notes,
-    status: row.status === "sold" || row.status === "cold" || row.status === "pipeline" ? row.status : "finessing",
+    status:
+      row.status === "sold" ||
+      row.status === "cold" ||
+      row.status === "pipeline"
+        ? row.status
+        : "finessing",
+    demoStatus:
+      row.demo_status === "building" ||
+      row.demo_status === "ready" ||
+      row.demo_status === "sent"
+        ? row.demo_status
+        : row.demo_status === "none"
+          ? "none"
+          : parsedNotes.demoLink
+            ? "ready"
+            : "none",
+    outreachStatus:
+      row.outreach_status === "contacted" ||
+      row.outreach_status === "responded" ||
+      row.outreach_status === "follow_up"
+        ? row.outreach_status
+        : "not_started",
     claimedByUserId: row.claimed_by,
     claimedAt: toDate(row.claimed_at),
     createdAt: toDate(row.created_at),
@@ -143,7 +237,7 @@ function toLeadListRow(row: DbLeadRow, profiles: Map<string, ProfileRow>): LeadL
 
 async function hydrateLeads(rows: DbLeadRow[]): Promise<LeadListRow[]> {
   const profiles = await getProfilesById(
-    rows.map(row => row.claimed_by).filter((id): id is string => Boolean(id)),
+    rows.map(row => row.claimed_by).filter((id): id is string => Boolean(id))
   );
   return rows.map(row => toLeadListRow(row, profiles));
 }
@@ -179,7 +273,9 @@ export async function upsertUser(input: {
   }
 }
 
-export async function getUserByAuthUserId(authUserId: string): Promise<ProfileRow | undefined> {
+export async function getUserByAuthUserId(
+  authUserId: string
+): Promise<ProfileRow | undefined> {
   const sql = getSql();
   const rows = await sql<ProfileRow[]>`
     select id, full_name, email, role, created_at, updated_at
@@ -200,7 +296,8 @@ export async function listLeads(filters?: {
   let query = sql<DbLeadRow[]>`select * from public.leads where true`;
 
   const search = filters?.search?.trim();
-  if (search) query = sql<DbLeadRow[]>`${query} and company_name ilike ${`%${search}%`}`;
+  if (search)
+    query = sql<DbLeadRow[]>`${query} and company_name ilike ${`%${search}%`}`;
   if (filters?.type && filters.type !== "all") {
     query = sql<DbLeadRow[]>`${query} and source = ${filters.type}`;
   }
@@ -211,8 +308,11 @@ export async function listLeads(filters?: {
     query = sql<DbLeadRow[]>`${query} and claimed_by is null`;
   }
   if (filters?.status && filters.status !== "all") {
-    const databaseStatus = filters.status === "finessing" ? ["finessing", "new"] : [filters.status];
-    query = sql<DbLeadRow[]>`${query} and status = any(${sql.array(databaseStatus)})`;
+    const databaseStatus =
+      filters.status === "finessing" ? ["finessing", "new"] : [filters.status];
+    query = sql<
+      DbLeadRow[]
+    >`${query} and status = any(${sql.array(databaseStatus)})`;
   }
   query = sql<DbLeadRow[]>`${query} order by updated_at desc nulls last`;
 
@@ -231,7 +331,9 @@ export async function getLeadById(id: string): Promise<DbLeadRow | undefined> {
   }
 }
 
-export async function getLeadWithClaimer(id: string): Promise<LeadListRow | undefined> {
+export async function getLeadWithClaimer(
+  id: string
+): Promise<LeadListRow | undefined> {
   const row = await getRawLeadById(id);
   if (!row) return undefined;
   const [lead] = await hydrateLeads([row]);
@@ -247,6 +349,8 @@ export type LeadInput = {
   demoLink?: string;
   notes?: string;
   status?: LeadStatus;
+  demoStatus?: DemoStatus;
+  outreachStatus?: OutreachStatus;
 };
 
 function toLeadColumns(input: LeadInput) {
@@ -259,20 +363,25 @@ function toLeadColumns(input: LeadInput) {
     contact_email: input.email?.trim() || null,
     source: input.type?.trim() || null,
     status: input.status || "finessing",
-    notes: composeNotes(input.address, input.demoLink, input.notes),
+    demo_status: input.demoStatus || "none",
+    outreach_status: input.outreachStatus || "not_started",
+    notes: composeLeadText(input.address, input.demoLink, input.notes),
   };
 }
 
-export async function createLead(createdById: string, input: LeadInput): Promise<LeadListRow | undefined> {
+export async function createLead(
+  createdById: string,
+  input: LeadInput
+): Promise<LeadListRow | undefined> {
   const sql = getSql();
   const columns = toLeadColumns(input);
   try {
     const rows = await sql<DbLeadRow[]>`
       insert into public.leads
-        (title, company_name, contact_name, contact_phone, contact_email, source, status, notes, created_by_id)
+        (title, company_name, contact_name, contact_phone, contact_email, source, status, demo_status, outreach_status, notes, created_by_id)
       values
         (${columns.title}, ${columns.company_name}, ${columns.contact_name}, ${columns.contact_phone},
-         ${columns.contact_email}, ${columns.source}, ${columns.status}, ${columns.notes}, ${createdById}::uuid)
+         ${columns.contact_email}, ${columns.source}, ${columns.status}, ${columns.demo_status}, ${columns.outreach_status}, ${columns.notes}, ${createdById}::uuid)
       returning *
     `;
     if (!rows[0]) throw new Error("lead creation returned no row");
@@ -282,7 +391,10 @@ export async function createLead(createdById: string, input: LeadInput): Promise
   }
 }
 
-export async function updateLead(id: string, input: LeadInput): Promise<LeadListRow | undefined> {
+export async function updateLead(
+  id: string,
+  input: LeadInput
+): Promise<LeadListRow | undefined> {
   const sql = getSql();
   const columns = toLeadColumns(input);
   try {
@@ -295,6 +407,8 @@ export async function updateLead(id: string, input: LeadInput): Promise<LeadList
         contact_email = ${columns.contact_email},
         source = ${columns.source},
         status = ${columns.status},
+        demo_status = ${columns.demo_status},
+        outreach_status = ${columns.outreach_status},
         notes = ${columns.notes},
         updated_at = now()
       where id = ${id}::uuid
@@ -319,7 +433,10 @@ export async function deleteLead(id: string): Promise<void> {
  * the Supabase client with the verified bearer token. PostgreSQL performs the
  * conditional null-to-owner transition atomically.
  */
-export async function claimLead(accessToken: string, id: string): Promise<boolean> {
+export async function claimLead(
+  accessToken: string,
+  id: string
+): Promise<boolean> {
   const client = createSupabaseRequestClient(accessToken);
   const { data, error } = await client.rpc("claim_lead", { p_lead_id: id });
   if (error) throw databaseError("atomic lead claim", error);
@@ -328,10 +445,12 @@ export async function claimLead(accessToken: string, id: string): Promise<boolea
   // serialize a successful function result as an empty response or a
   // differently-shaped single row. Never infer a conflict from that shape.
   const returnedRows = Array.isArray(data) ? data : data ? [data] : [];
-  if (returnedRows.some(row => {
-    const candidate = row as Partial<DbLeadRow>;
-    return candidate.id === id || candidate.id === id.toString();
-  })) {
+  if (
+    returnedRows.some(row => {
+      const candidate = row as Partial<DbLeadRow>;
+      return candidate.id === id || candidate.id === id.toString();
+    })
+  ) {
     return true;
   }
 
@@ -343,6 +462,7 @@ export async function claimLead(accessToken: string, id: string): Promise<boolea
     .select("id, claimed_by")
     .eq("id", id)
     .maybeSingle();
-  if (readError) throw databaseError("atomic lead claim verification", readError);
+  if (readError)
+    throw databaseError("atomic lead claim verification", readError);
   return currentLead?.claimed_by === authData.user.id;
 }

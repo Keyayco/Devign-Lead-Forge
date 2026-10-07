@@ -23,16 +23,26 @@ const mocks = vi.hoisted(() => ({
     updated_at: new Date().toISOString(),
   })),
   upsertUser: vi.fn(),
-  getBearerToken: vi.fn((req: { headers: Record<string, string | string[] | undefined> }) => {
-    const header = req.headers.authorization;
-    return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : null;
-  }),
-  getSupabaseUserFromRequest: vi.fn(async (req: { headers: Record<string, string | string[] | undefined> }) => {
-    const header = req.headers.authorization;
-    return typeof header === "string" && header.startsWith("Bearer ")
-      ? { id: AGENT_ONE, email: "agent@example.com", user_metadata: { full_name: "Agent One" } }
-      : null;
-  }),
+  getBearerToken: vi.fn(
+    (req: { headers: Record<string, string | string[] | undefined> }) => {
+      const header = req.headers.authorization;
+      return typeof header === "string" && header.startsWith("Bearer ")
+        ? header.slice(7)
+        : null;
+    }
+  ),
+  getSupabaseUserFromRequest: vi.fn(
+    async (req: { headers: Record<string, string | string[] | undefined> }) => {
+      const header = req.headers.authorization;
+      return typeof header === "string" && header.startsWith("Bearer ")
+        ? {
+            id: AGENT_ONE,
+            email: "agent@example.com",
+            user_metadata: { full_name: "Agent One" },
+          }
+        : null;
+    }
+  ),
 }));
 
 vi.mock("./db", () => mocks);
@@ -48,6 +58,8 @@ const validInput = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  demoStatus: "none" as const,
+  outreachStatus: "not_started" as const,
   status: "finessing" as const,
 };
 
@@ -59,6 +71,8 @@ const createdLead = {
   address: validInput.address,
   type: validInput.type,
   demoLink: validInput.demoLink,
+  demoStatus: "none" as const,
+  outreachStatus: "not_started" as const,
   notes: "",
   status: "finessing" as const,
   claimedByUserId: null,
@@ -69,7 +83,9 @@ const createdLead = {
   claimedByEmail: null,
 };
 
-async function withAppServer<T>(callback: (baseUrl: string) => Promise<T>): Promise<T> {
+async function withAppServer<T>(
+  callback: (baseUrl: string) => Promise<T>
+): Promise<T> {
   const app = await createApp({ serveClient: false });
   const server = createServer(app);
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -81,7 +97,11 @@ async function withAppServer<T>(callback: (baseUrl: string) => Promise<T>): Prom
   }
 }
 
-async function postCreate(baseUrl: string, input: unknown, authenticated = true) {
+async function postCreate(
+  baseUrl: string,
+  input: unknown,
+  authenticated = true
+) {
   const response = await fetch(`${baseUrl}/api/trpc/leads.create?batch=1`, {
     method: "POST",
     headers: {
@@ -105,7 +125,9 @@ describe("lead create API JSON boundary", () => {
   it("returns JSON for an authenticated successful lead creation", async () => {
     mocks.createLead.mockResolvedValue(createdLead);
 
-    const result = await withAppServer(baseUrl => postCreate(baseUrl, validInput));
+    const result = await withAppServer(baseUrl =>
+      postCreate(baseUrl, validInput)
+    );
 
     expect(result.status).toBe(200);
     expect(result.contentType).toContain("application/json");
@@ -114,7 +136,9 @@ describe("lead create API JSON boundary", () => {
   });
 
   it("returns JSON for an unauthenticated request", async () => {
-    const result = await withAppServer(baseUrl => postCreate(baseUrl, validInput, false));
+    const result = await withAppServer(baseUrl =>
+      postCreate(baseUrl, validInput, false)
+    );
 
     expect(result.status).toBe(401);
     expect(result.contentType).toContain("application/json");
@@ -123,7 +147,9 @@ describe("lead create API JSON boundary", () => {
   });
 
   it("returns JSON for invalid lead input", async () => {
-    const result = await withAppServer(baseUrl => postCreate(baseUrl, { ...validInput, email: "not-an-email" }));
+    const result = await withAppServer(baseUrl =>
+      postCreate(baseUrl, { ...validInput, email: "not-an-email" })
+    );
 
     expect(result.status).toBe(400);
     expect(result.contentType).toContain("application/json");
@@ -132,9 +158,13 @@ describe("lead create API JSON boundary", () => {
   });
 
   it("returns JSON when the database insert fails", async () => {
-    mocks.createLead.mockRejectedValue(new Error("Supabase lead creation failed: insert denied"));
+    mocks.createLead.mockRejectedValue(
+      new Error("Supabase lead creation failed: insert denied")
+    );
 
-    const result = await withAppServer(baseUrl => postCreate(baseUrl, validInput));
+    const result = await withAppServer(baseUrl =>
+      postCreate(baseUrl, validInput)
+    );
 
     expect(result.status).toBe(500);
     expect(result.contentType).toContain("application/json");

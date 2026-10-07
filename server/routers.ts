@@ -31,6 +31,10 @@ const leadFields = {
     .max(512)
     .optional()
     .or(z.literal("")),
+  demoStatus: z.enum(["none", "building", "ready", "sent"]).default("none"),
+  outreachStatus: z
+    .enum(["not_started", "contacted", "responded", "follow_up"])
+    .default("not_started"),
   notes: z.string().trim().max(2000).optional().or(z.literal("")),
   status: z
     .enum(["finessing", "sold", "cold", "pipeline"])
@@ -148,7 +152,10 @@ export const appRouter = router({
                 cause: error,
               });
             }
-            if (!afterAttempt.claimed_by || afterAttempt.claimed_by === ctx.user.id) {
+            if (
+              !afterAttempt.claimed_by ||
+              afterAttempt.claimed_by === ctx.user.id
+            ) {
               throw error;
             }
             throw new TRPCError({
@@ -168,7 +175,10 @@ export const appRouter = router({
               message: "Lead not found after claim attempt",
             });
           }
-          if (!afterAttempt.claimed_by || afterAttempt.claimed_by === ctx.user.id) {
+          if (
+            !afterAttempt.claimed_by ||
+            afterAttempt.claimed_by === ctx.user.id
+          ) {
             throw new TRPCError({
               code: "INTERNAL_SERVER_ERROR",
               message: "The atomic claim did not confirm ownership",

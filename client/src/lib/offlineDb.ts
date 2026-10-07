@@ -1,4 +1,10 @@
 export type OfflineLeadStatus = "finessing" | "sold" | "cold" | "pipeline";
+export type OfflineDemoStatus = "none" | "building" | "ready" | "sent";
+export type OfflineOutreachStatus =
+  | "not_started"
+  | "contacted"
+  | "responded"
+  | "follow_up";
 
 export type OfflineLead = {
   id: string;
@@ -8,6 +14,8 @@ export type OfflineLead = {
   address: string;
   type: string;
   demoLink: string;
+  demoStatus: OfflineDemoStatus;
+  outreachStatus: OfflineOutreachStatus;
   notes: string;
   status: OfflineLeadStatus;
   claimedByUserId: string | null;
@@ -116,6 +124,46 @@ export async function getCachedLeads(userId: string): Promise<OfflineLead[]> {
   return records.sort((a, b) =>
     (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
   );
+}
+
+export async function migrateUserScope(
+  sourceUserId: string,
+  targetUserId: string
+): Promise<void> {
+  if (!sourceUserId || sourceUserId === targetUserId) return;
+  const db = await openDatabase();
+  const transaction = db.transaction([LEADS_STORE, OUTBOX_STORE], "readwrite");
+  const leadsStore = transaction.objectStore(LEADS_STORE);
+  const outboxStore = transaction.objectStore(OUTBOX_STORE);
+  const [leads, targetLeads, operations, targetOperations] = await Promise.all([
+    requestResult<LeadRecord[]>(
+      leadsStore.index("userId").getAll(sourceUserId)
+    ),
+    requestResult<LeadRecord[]>(
+      leadsStore.index("userId").getAll(targetUserId)
+    ),
+    requestResult<OutboxOperation[]>(
+      outboxStore.index("userId").getAll(sourceUserId)
+    ),
+    requestResult<OutboxOperation[]>(
+      outboxStore.index("userId").getAll(targetUserId)
+    ),
+  ]);
+  const currentLeads = new Map(targetLeads.map(lead => [lead.id, lead]));
+  for (const lead of leads) {
+    const current = currentLeads.get(lead.id);
+    if (!current || lead.cachedAt > current.cachedAt)
+      leadsStore.put({ ...lead, userId: targetUserId });
+  }
+  const currentOperations = new Map(
+    targetOperations.map(operation => [operation.id, operation])
+  );
+  for (const operation of operations) {
+    const current = currentOperations.get(operation.id);
+    if (!current || operation.updatedAt > current.updatedAt)
+      outboxStore.put({ ...operation, userId: targetUserId });
+  }
+  await transactionComplete(transaction);
 }
 
 export async function cacheLeads(

@@ -28,9 +28,12 @@ const rawLead = {
   contact_phone: "+1 555 0102",
   source: "SaaS",
   status: "new",
+  demo_status: null as string | null,
+  outreach_status: null as string | null,
   claimed_by: null as string | null,
   claimed_at: null as string | null,
-  notes: "14 Market Street, Boston, MA\nDemo Link: https://northstar.example/demo",
+  notes:
+    "14 Market Street, Boston, MA\nDemo Link: https://northstar.example/demo",
   created_by_id: AGENT_ONE,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -44,6 +47,8 @@ const baseLead = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  demoStatus: "ready" as const,
+  outreachStatus: "not_started" as const,
   notes: "",
   status: "finessing" as const,
   claimedByUserId: null as string | null,
@@ -82,6 +87,8 @@ const validInput = {
   address: "14 Market Street, Boston, MA",
   type: "SaaS",
   demoLink: "https://northstar.example/demo",
+  demoStatus: "none" as const,
+  outreachStatus: "not_started" as const,
   status: "finessing" as const,
 };
 
@@ -92,23 +99,31 @@ describe("lead access rules", () => {
     const caller = appRouter.createCaller(createContext());
 
     await expect(
-      caller.leads.create({ ...validInput, email: "not-an-email" }),
+      caller.leads.create({ ...validInput, email: "not-an-email" })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.createLead).not.toHaveBeenCalled();
   });
 
   it("prevents another agent from updating a claimed lead", async () => {
-    vi.mocked(db.getLeadById).mockResolvedValue({ ...rawLead, claimed_by: AGENT_TWO });
+    vi.mocked(db.getLeadById).mockResolvedValue({
+      ...rawLead,
+      claimed_by: AGENT_TWO,
+    });
     const caller = appRouter.createCaller(createContext(AGENT_ONE));
 
-    await expect(caller.leads.update({ id: LEAD_ID, ...validInput })).rejects.toMatchObject({
+    await expect(
+      caller.leads.update({ id: LEAD_ID, ...validInput })
+    ).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
     expect(db.updateLead).not.toHaveBeenCalled();
   });
 
   it("returns a conflict when a lead is already claimed", async () => {
-    vi.mocked(db.getLeadById).mockResolvedValue({ ...rawLead, claimed_by: AGENT_TWO });
+    vi.mocked(db.getLeadById).mockResolvedValue({
+      ...rawLead,
+      claimed_by: AGENT_TWO,
+    });
     const caller = appRouter.createCaller(createContext(AGENT_ONE));
 
     await expect(caller.leads.claim({ id: LEAD_ID })).rejects.toMatchObject({
@@ -121,7 +136,11 @@ describe("lead access rules", () => {
     vi.mocked(db.getLeadById)
       .mockResolvedValueOnce(rawLead)
       .mockResolvedValueOnce({ ...rawLead, claimed_by: AGENT_TWO });
-    vi.mocked(db.claimLead).mockRejectedValue(new Error("Supabase atomic lead claim failed: Lead is already claimed or does not exist"));
+    vi.mocked(db.claimLead).mockRejectedValue(
+      new Error(
+        "Supabase atomic lead claim failed: Lead is already claimed or does not exist"
+      )
+    );
     const caller = appRouter.createCaller(createContext(AGENT_ONE));
 
     await expect(caller.leads.claim({ id: LEAD_ID })).rejects.toMatchObject({
@@ -172,7 +191,10 @@ describe("lead access rules", () => {
   });
 
   it("allows a second agent to claim a different unclaimed lead", async () => {
-    const secondLead = { ...rawLead, id: "88888888-8888-4888-8888-888888888888" };
+    const secondLead = {
+      ...rawLead,
+      id: "88888888-8888-4888-8888-888888888888",
+    };
     vi.mocked(db.getLeadById).mockResolvedValue(secondLead);
     vi.mocked(db.claimLead).mockResolvedValue(true);
     vi.mocked(db.getLeadWithClaimer).mockResolvedValue({
@@ -185,7 +207,10 @@ describe("lead access rules", () => {
 
     const result = await caller.leads.claim({ id: secondLead.id });
 
-    expect(db.claimLead).toHaveBeenCalledWith(`token-${AGENT_TWO}`, secondLead.id);
+    expect(db.claimLead).toHaveBeenCalledWith(
+      `token-${AGENT_TWO}`,
+      secondLead.id
+    );
     expect(result?.claimedByUserId).toBe(AGENT_TWO);
   });
 });
@@ -196,7 +221,12 @@ describe("lead CRUD procedure paths", () => {
   it("lists filtered leads for an authenticated agent", async () => {
     vi.mocked(db.listLeads).mockResolvedValue([baseLead]);
     const caller = appRouter.createCaller(createContext());
-    const filters = { search: "Northstar", type: "all", claimStatus: "all" as const, status: "all" as const };
+    const filters = {
+      search: "Northstar",
+      type: "all",
+      claimStatus: "all" as const,
+      status: "all" as const,
+    };
 
     const result = await caller.leads.list(filters);
 

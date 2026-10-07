@@ -24,7 +24,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import type { OfflineLead } from "@/lib/offlineDb";
+import type {
+  OfflineDemoStatus,
+  OfflineLead,
+  OfflineOutreachStatus,
+} from "@/lib/offlineDb";
+import {
+  getDemoStatus,
+  getFlowPriorityLabel,
+  getFlowState,
+  getOutreachStatus,
+  type FlowState,
+} from "@/lib/flow";
 import { useOfflineLeads, useOnlineStatus } from "@/lib/useOfflineLeads";
 import {
   ArrowUpRight,
@@ -64,6 +75,8 @@ type LeadFormState = {
   address: string;
   type: string;
   demoLink: string;
+  demoStatus: OfflineDemoStatus;
+  outreachStatus: OfflineOutreachStatus;
   notes: string;
   status: StatusValue;
 };
@@ -75,6 +88,8 @@ const emptyForm: LeadFormState = {
   address: "",
   type: "",
   demoLink: "",
+  demoStatus: "none",
+  outreachStatus: "not_started",
   notes: "",
   status: "finessing",
 };
@@ -123,7 +138,11 @@ export default function Home() {
 
 function LeadWorkspace() {
   const { user, supabaseUser, isAuthenticated } = useAuth();
-  const activeUserId = user?.id ?? supabaseUser?.id;
+  const activeUserId = supabaseUser?.id ?? user?.id;
+  const legacyUserIds = useMemo(
+    () => (user?.id && user.id !== activeUserId ? [user.id] : []),
+    [activeUserId, user?.id]
+  );
   const online = useOnlineStatus();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -147,7 +166,7 @@ function LeadWorkspace() {
     [search, typeFilter, claimStatus, statusFilter]
   );
   const leadsQuery = trpc.leads.list.useQuery(queryInput, {
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && online,
   });
   const utils = trpc.useUtils();
 
@@ -222,6 +241,7 @@ function LeadWorkspace() {
   );
   const offline = useOfflineLeads({
     userId: activeUserId,
+    legacyUserIds,
     online,
     serverLeads,
     createOnline,
@@ -280,6 +300,26 @@ function LeadWorkspace() {
       sold: leads.filter(lead => lead.status === "sold").length,
     };
   }, [activeUserId, leads]);
+  const flowItems = useMemo(
+    () =>
+      leads.map(lead => ({ lead, flow: getFlowState(toOfflineLead(lead)) })),
+    [leads]
+  );
+  const flowAttention = useMemo(
+    () =>
+      flowItems
+        .filter(
+          ({ flow }) => flow.priority !== "LOW" && flow.priority !== "COMPLETE"
+        )
+        .sort((a, b) => {
+          const order = { NOW: 0, NEXT: 1, PREPARE: 2, WAITING: 3 } as const;
+          return (
+            order[a.flow.priority as keyof typeof order] -
+            order[b.flow.priority as keyof typeof order]
+          );
+        }),
+    [flowItems]
+  );
   const types = useMemo(() => {
     const values = new Set(leads.map(lead => lead.type));
     return Array.from(
@@ -302,6 +342,8 @@ function LeadWorkspace() {
       address: lead.address,
       type: lead.type,
       demoLink: lead.demoLink,
+      demoStatus: getDemoStatus(lead),
+      outreachStatus: getOutreachStatus(lead),
       notes: lead.notes,
       status: lead.status,
     });
@@ -452,6 +494,8 @@ function LeadWorkspace() {
             tone="emerald"
           />
         </section>
+
+        <FlowSummary items={flowItems} attention={flowAttention} />
 
         <Card className="overflow-hidden rounded-2xl border-slate-200/80 bg-white shadow-[0_20px_60px_-38px_rgba(15,23,42,0.42)]">
           <CardContent className="p-0">
@@ -663,18 +707,33 @@ function LeadWorkspace() {
                           </td>
                           <td className="px-5 py-4 align-top">
                             {lead.demoLink ? (
-                              <a
-                                href={lead.demoLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-slate-950 hover:decoration-slate-950"
-                              >
-                                <Link2 className="h-3.5 w-3.5" />
-                                View demo
-                                <ArrowUpRight className="h-3 w-3" />
-                              </a>
+                              <div className="space-y-1.5">
+                                <a
+                                  href={lead.demoLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-slate-950 hover:decoration-slate-950"
+                                >
+                                  <Link2 className="h-3.5 w-3.5" />
+                                  View demo
+                                  <ArrowUpRight className="h-3 w-3" />
+                                </a>
+                                <div className="flex flex-col items-start gap-1">
+                                  <DemoStatusBadge
+                                    status={getDemoStatus(lead)}
+                                  />
+                                  <OutreachStatusBadge
+                                    status={getOutreachStatus(lead)}
+                                  />
+                                </div>
+                              </div>
                             ) : (
-                              <span className="text-slate-300">—</span>
+                              <div className="flex flex-col items-start gap-1">
+                                <DemoStatusBadge status={getDemoStatus(lead)} />
+                                <OutreachStatusBadge
+                                  status={getOutreachStatus(lead)}
+                                />
+                              </div>
                             )}
                           </td>
                           <td
@@ -808,6 +867,7 @@ function LeadWorkspace() {
                   <MobileLeadCard
                     key={lead.id}
                     lead={lead}
+                    flow={getFlowState(toOfflineLead(lead))}
                     userId={activeUserId}
                     onOpen={() => setDetailLeadId(lead.id)}
                     onEdit={() => openEdit(lead)}
@@ -944,7 +1004,62 @@ function LeadWorkspace() {
                   className="min-h-24 resize-y rounded-xl border-slate-200 bg-slate-50/50 focus-visible:ring-slate-950"
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500"
+                    htmlFor="demoStatus"
+                  >
+                    Demo status
+                  </label>
+                  <select
+                    id="demoStatus"
+                    value={form.demoStatus}
+                    onChange={event =>
+                      setForm({
+                        ...form,
+                        demoStatus: event.target.value as OfflineDemoStatus,
+                      })
+                    }
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-700 outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                  >
+                    <option value="none">None</option>
+                    <option value="building">Building</option>
+                    <option value="ready">Ready</option>
+                    <option value="sent">Sent</option>
+                  </select>
+                  <p className="mt-2 text-xs text-slate-400">
+                    This does not mark outreach as complete.
+                  </p>
+                </div>
+                <div>
+                  <label
+                    className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500"
+                    htmlFor="outreachStatus"
+                  >
+                    Outreach status
+                  </label>
+                  <select
+                    id="outreachStatus"
+                    value={form.outreachStatus}
+                    onChange={event =>
+                      setForm({
+                        ...form,
+                        outreachStatus: event.target
+                          .value as OfflineOutreachStatus,
+                      })
+                    }
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-700 outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                  >
+                    <option value="not_started">Not started</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="responded">Responded</option>
+                    <option value="follow_up">Follow-up</option>
+                  </select>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Record only explicit outreach evidence.
+                  </p>
+                </div>
                 <Field
                   label="Demo Link"
                   type="url"
@@ -952,9 +1067,6 @@ function LeadWorkspace() {
                   onChange={value => setForm({ ...form, demoLink: value })}
                   placeholder="https://example.com/demo"
                 />
-                <p className="mt-2 text-xs text-slate-400">
-                  Optional. Add a full URL when a demo is available.
-                </p>
               </div>
               <datalist id="lead-types">
                 {typeSuggestions.map(type => (
@@ -1038,6 +1150,17 @@ function LeadWorkspace() {
                     label="Address"
                     value={detailLead.address}
                     icon={<MapPin className="h-3.5 w-3.5" />}
+                  />
+                  <BriefItem
+                    label="Outreach"
+                    value={
+                      {
+                        not_started: "Not started",
+                        contacted: "Contacted",
+                        responded: "Responded",
+                        follow_up: "Follow-up",
+                      }[getOutreachStatus(detailLead)]
+                    }
                   />
                   <BriefItem
                     label="Last updated"
@@ -1207,6 +1330,95 @@ function StatCard({
   );
 }
 
+function FlowSummary({
+  items,
+  attention,
+}: {
+  items: Array<{ lead: MobileLead; flow: FlowState }>;
+  attention: Array<{ lead: MobileLead; flow: FlowState }>;
+}) {
+  const now = attention.filter(item => item.flow.priority === "NOW").length;
+  const next = attention.filter(item => item.flow.priority === "NEXT").length;
+  const prepare = attention.filter(
+    item => item.flow.priority === "PREPARE"
+  ).length;
+
+  return (
+    <section
+      className="mb-5 rounded-2xl border border-slate-200/80 bg-slate-950 p-4 text-white shadow-[0_18px_45px_-28px_rgba(15,23,42,0.75)] sm:mb-7 sm:p-6"
+      aria-labelledby="flow-summary-title"
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            FLOW priority
+          </p>
+          <h2
+            id="flow-summary-title"
+            className="mt-1 text-xl font-semibold tracking-tight"
+          >
+            What needs attention?
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
+            A deterministic reading of the lead data already available in this
+            workspace.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <FlowCount label="Now" value={now} />
+          <FlowCount label="Next" value={next} />
+          <FlowCount label="Prepare" value={prepare} />
+        </div>
+      </div>
+      {attention.length > 0 ? (
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {attention.slice(0, 3).map(({ lead, flow }) => (
+            <div
+              key={lead.id}
+              className="rounded-xl border border-white/10 bg-white/[0.06] p-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-semibold text-white">
+                  {lead.name}
+                </p>
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                  {getFlowPriorityLabel(flow.priority)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-semibold text-slate-300">
+                {flow.recommendedAction}
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
+                {flow.reason}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5 rounded-xl border border-white/10 bg-white/[0.06] p-3 text-xs leading-5 text-slate-400">
+          No reliable FLOW action can be calculated from the current lead data.
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span>{items.length} leads evaluated</span>
+        <span>•</span>
+        <span>Offline-safe</span>
+      </div>
+    </section>
+  );
+}
+
+function FlowCount({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-[64px] rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center">
+      <p className="text-lg font-semibold text-white">{value}</p>
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 type MobileLead = {
   id: string;
   name: string;
@@ -1215,6 +1427,8 @@ type MobileLead = {
   address: string;
   type: string;
   demoLink: string;
+  demoStatus: OfflineDemoStatus;
+  outreachStatus: OfflineOutreachStatus;
   notes: string;
   status: StatusValue;
   claimedByUserId: string | null;
@@ -1237,6 +1451,7 @@ function LoadingCards() {
 
 function MobileLeadCard({
   lead,
+  flow,
   userId,
   onOpen,
   onEdit,
@@ -1245,6 +1460,7 @@ function MobileLeadCard({
   claimPending,
 }: {
   lead: MobileLead;
+  flow: FlowState;
   userId?: string;
   onOpen: () => void;
   onEdit: () => void;
@@ -1297,6 +1513,35 @@ function MobileLeadCard({
           </Button>
         </div>
       </div>
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+            FLOW · {getFlowPriorityLabel(flow.priority)}
+          </span>
+          <span className="text-xs font-semibold text-slate-700">
+            {flow.recommendedAction}
+          </span>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{flow.reason}</p>
+        <div
+          className="mt-3 grid grid-cols-5 gap-1"
+          aria-label="FLOW diagnostic"
+        >
+          {Object.entries(flow.diagnostic).map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-slate-700"
+                  style={{ width: `${value}%` }}
+                />
+              </div>
+              <p className="mt-1 truncate text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                {label.slice(0, 4)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="mt-4 grid gap-2 text-xs text-slate-600">
         <div className="flex gap-2">
           <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
@@ -1345,6 +1590,12 @@ function MobileLeadCard({
             </a>
           </div>
         )}
+        <div className="flex items-center gap-2">
+          <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Outreach
+          </span>
+          <OutreachStatusBadge status={getOutreachStatus(lead)} />
+        </div>
       </div>
       <div className="mt-4 border-t border-slate-100 pt-3">
         {isLocked ? (
@@ -1461,6 +1712,8 @@ function toOfflineLead(lead: {
   address: string;
   type: string;
   demoLink: string;
+  demoStatus: OfflineDemoStatus;
+  outreachStatus: OfflineOutreachStatus;
   notes: string;
   status: StatusValue;
   claimedByUserId: string | null;
@@ -1477,6 +1730,8 @@ function toOfflineLead(lead: {
     address: lead.address,
     type: lead.type,
     demoLink: lead.demoLink,
+    demoStatus: getDemoStatus(lead),
+    outreachStatus: getOutreachStatus(lead),
     notes: lead.notes,
     status: lead.status,
     claimedByUserId: lead.claimedByUserId,
@@ -1515,6 +1770,52 @@ function StatusBadge({
       title={option.detail}
     >
       {option.label}
+    </Badge>
+  );
+}
+
+function DemoStatusBadge({ status }: { status: OfflineDemoStatus }) {
+  const labels: Record<OfflineDemoStatus, string> = {
+    none: "None",
+    building: "Building",
+    ready: "Ready",
+    sent: "Sent",
+  };
+  const tones: Record<OfflineDemoStatus, string> = {
+    none: "bg-slate-100 text-slate-500 ring-slate-200",
+    building: "bg-amber-50 text-amber-700 ring-amber-100",
+    ready: "bg-blue-50 text-blue-700 ring-blue-100",
+    sent: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  };
+  return (
+    <Badge
+      variant="secondary"
+      className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ring-1 ring-inset ${tones[status]}`}
+    >
+      Demo · {labels[status]}
+    </Badge>
+  );
+}
+
+function OutreachStatusBadge({ status }: { status: OfflineOutreachStatus }) {
+  const labels: Record<OfflineOutreachStatus, string> = {
+    not_started: "Not started",
+    contacted: "Contacted",
+    responded: "Responded",
+    follow_up: "Follow-up",
+  };
+  const tones: Record<OfflineOutreachStatus, string> = {
+    not_started: "bg-slate-100 text-slate-500 ring-slate-200",
+    contacted: "bg-amber-50 text-amber-700 ring-amber-100",
+    responded: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    follow_up: "bg-violet-50 text-violet-700 ring-violet-100",
+  };
+  return (
+    <Badge
+      variant="secondary"
+      className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ring-1 ring-inset ${tones[status]}`}
+    >
+      Outreach · {labels[status]}
     </Badge>
   );
 }

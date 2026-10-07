@@ -6,6 +6,7 @@ import {
   getCachedLeads,
   getOutbox,
   isOfflineStorageAvailable,
+  migrateUserScope,
   putCachedLead,
   removeOutboxOperation,
   saveOutboxOperation,
@@ -39,6 +40,7 @@ type ServerMutation<TInput, TResult> = (input: TInput) => Promise<TResult>;
 
 type UseOfflineLeadsOptions = {
   userId: string | null | undefined;
+  legacyUserIds?: string[];
   online: boolean;
   serverLeads: OfflineLead[];
   createOnline: ServerMutation<
@@ -65,6 +67,7 @@ function now(): number {
 
 export function useOfflineLeads({
   userId,
+  legacyUserIds = [],
   online,
   serverLeads,
   createOnline,
@@ -85,13 +88,16 @@ export function useOfflineLeads({
       setPendingCount(0);
       return;
     }
+    for (const legacyUserId of legacyUserIds) {
+      await migrateUserScope(legacyUserId, userId);
+    }
     const [leads, count] = await Promise.all([
       getCachedLeads(userId),
       countOutbox(userId),
     ]);
     setCachedLeads(leads);
     setPendingCount(count);
-  }, [storageAvailable, userId]);
+  }, [legacyUserIds, storageAvailable, userId]);
 
   useEffect(() => {
     void refreshLocalState().catch(error => {
