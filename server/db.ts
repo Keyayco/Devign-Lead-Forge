@@ -80,6 +80,46 @@ function getSql() {
   return sqlClient;
 }
 
+async function logLeadCreateDatabaseDiagnostic(
+  sql: ReturnType<typeof postgres>
+): Promise<void> {
+  try {
+    const [diagnostic] = await sql<
+      {
+        database_name: string | null;
+        schema_name: string | null;
+        has_demo_status: boolean;
+        has_outreach_status: boolean;
+      }[]
+    >`
+      select
+        current_database() as database_name,
+        current_schema() as schema_name,
+        exists (
+          select 1
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'leads'
+            and column_name = 'demo_status'
+        ) as has_demo_status,
+        exists (
+          select 1
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'leads'
+            and column_name = 'outreach_status'
+        ) as has_outreach_status
+    `;
+
+    console.info("[DB-DIAGNOSTIC]", diagnostic ?? null);
+  } catch (error) {
+    console.warn(
+      "[DB-DIAGNOSTIC] unavailable",
+      error instanceof Error ? error.message : "unknown diagnostic error"
+    );
+  }
+}
+
 function databaseError(
   operation: string,
   error: { message?: string } | null | undefined
@@ -376,6 +416,7 @@ export async function createLead(
   const sql = getSql();
   const columns = toLeadColumns(input);
   try {
+    await logLeadCreateDatabaseDiagnostic(sql);
     const rows = await sql<DbLeadRow[]>`
       insert into public.leads
         (title, company_name, contact_name, contact_phone, contact_email, source, status, demo_status, outreach_status, notes, created_by_id)
